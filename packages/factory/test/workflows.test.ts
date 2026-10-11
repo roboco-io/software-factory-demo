@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { ENGINES } from "../src/agents/types";
 import { REPO_ROOT } from "../src/paths";
+import { loadRiskPolicy } from "../src/policy/risk";
 
 interface Step {
   id?: string;
@@ -445,6 +446,68 @@ describe("P3 intake workflows", () => {
     for (const file of ALL) {
       if (allowed.has(file)) continue;
       expect(readFileSync(path.join(DIR, file), "utf8"), file).not.toContain("INTAKE_TOKEN");
+    }
+  });
+});
+
+describe("evidence gate (P3)", () => {
+  const BASE_SHA = "${{ github.event.pull_request.base.sha }}";
+
+  it("plans evidence with the base commit's CLI and a read-only token, without checking out PR code", () => {
+    const job = load("ci.yml").jobs["evidence-plan"]!;
+    expect(job.if).toBe("github.event_name == 'pull_request'");
+    expect(job.permissions).toEqual({ contents: "read", "pull-requests": "read", issues: "read" });
+    expect(job["timeout-minutes"]).toBeGreaterThan(0);
+    expect(checkouts(job)).toHaveLength(1);
+    expect(checkouts(job)[0]!.with).toMatchObject({
+      ref: BASE_SHA,
+      path: "base",
+      "persist-credentials": false,
+    });
+    const step = job.steps.find((s) => s.run?.includes("pnpm -s factory evidence --pr"))!;
+    expect(step["working-directory"]).toBe("base");
+    expect(step.run).toContain('--sha "$HEAD_SHA" --base "$BASE_SHA" --json');
+    expect(step.env?.HEAD_SHA).toBe("${{ github.event.pull_request.head.sha }}");
+    expect(step.env?.BASE_SHA).toBe(BASE_SHA);
+    expect(job.outputs?.plan).toBe("${{ steps.plan.outputs.plan }}");
+  });
+
+  it("runs PR tests in a job with no secrets or tokens, and fails instead of skipping when planning failed", () => {
+    const job = load("ci.yml").jobs.evidence!;
+    expect(job.needs).toBe("evidence-plan");
+    expect(job.if).toContain("!cancelled()");
+    expect(job.if).toContain("github.event_name == 'pull_request'");
+    expect(job.permissions).toEqual({ contents: "read" });
+    expect(job.environment).toBeUndefined();
+    expect(job["timeout-minutes"]).toBeGreaterThan(0);
+    expect(JSON.stringify(job)).not.toMatch(
+      /secrets\.|GITHUB_TOKEN|GH_TOKEN|FACTORY_TOKEN|create-github-app-token/,
+    );
+    for (const s of checkouts(job)) expect(s.with?.["persist-credentials"]).toBe(false);
+    const base = checkouts(job).find((s) => s.with?.path === "base")!;
+    const head = checkouts(job).find((s) => s.with?.path === "head")!;
+    expect(base.with?.ref).toBe(BASE_SHA);
+    expect(head.with?.ref).toBe("${{ github.event.pull_request.head.sha }}");
+    expect(head.with?.["fetch-depth"]).toBe(0);
+    const run = job.steps.find((s) => s.run?.includes("pnpm -s factory evidence-run"))!;
+    expect(run["working-directory"]).toBe("base");
+    expect(run.env).toEqual({
+      EVIDENCE_PLAN: "${{ needs.evidence-plan.outputs.plan }}",
+      FACTORY_WORKDIR: "${{ github.workspace }}/head",
+    });
+    // PR 코드가 있는 head/에서는 의존성을 설치하지 않는다. 설치는 evidence-run이 scrubEnv로 한다.
+    for (const s of job.steps.filter((x) => x.run?.includes("pnpm install"))) {
+      expect(s["working-directory"]).toBe("base");
+    }
+  });
+
+  it("produces every required check of factory/risk-policy.yml as a ci.yml job that runs on pull requests", () => {
+    const jobs = load("ci.yml").jobs;
+    const required = loadRiskPolicy().requiredChecks;
+    expect(required).toContain("evidence");
+    for (const name of required) {
+      expect(jobs[name], name).toBeDefined();
+      expect(jobs[name]!.if ?? "", name).not.toMatch(/event_name == 'push'/);
     }
   });
 });

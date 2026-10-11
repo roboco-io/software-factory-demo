@@ -90,3 +90,84 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
+  evidence-plan:
+    # 버그 PR인지, PR이 추가·수정한 테스트 파일이 무엇인지 base 커밋의 팩토리 코드로 정한다(spec 7.1.2).
+    # 변경 파일과 이슈 라벨은 API로 읽으므로 PR 코드는 체크아웃하지 않는다.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          {
+            ref: "${{ github.event.pull_request.base.sha }}",
+            path: base,
+            persist-credentials: false,
+          }
+      - uses: pnpm/action-setup@v6
+        with: { package_json_file: base/package.json }
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: base/.nvmrc
+          cache: pnpm
+          cache-dependency-path: base/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: base
+      - id: plan
+        working-directory: base
+        run: |
+          pnpm -s factory evidence --pr "$PR" --sha "$HEAD_SHA" --base "$BASE_SHA" --json > "$RUNNER_TEMP/evidence.json"
+          echo "plan=$(jq -c . "$RUNNER_TEMP/evidence.json")" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+  evidence:
+    # 필수 체크. PR 코드(테스트)를 실행하므로 시크릿·GitHub 토큰을 주지 않는다. 판정은 base 커밋의 CLI가 한다.
+    # evidence-plan이 실패해도 건너뛰지 않는다. 건너뛴(skipped) 필수 체크는 통과로 취급되기 때문이다.
+    # 계획이 없으면 evidence-run이 EvidencePlanSchema 검증에서 실패로 끝난다.
+    needs: evidence-plan
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          {
+            ref: "${{ github.event.pull_request.base.sha }}",
+            path: base,
+            persist-credentials: false,
+          }
+      # base 커밋 객체가 필요하므로 전체 이력을 받는다(git worktree로 base 트리를 만든다).
+      - uses: actions/checkout@v7
+        with:
+          {
+            ref: "${{ github.event.pull_request.head.sha }}",
+            path: head,
+            fetch-depth: 0,
+            persist-credentials: false,
+          }
+      - uses: pnpm/action-setup@v6
+        with: { package_json_file: base/package.json }
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: base/.nvmrc
+          cache: pnpm
+          cache-dependency-path: base/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: base
+      - name: evidence (시크릿·GitHub 토큰 없음)
+        working-directory: base
+        run: pnpm -s factory evidence-run
+        env:
+          EVIDENCE_PLAN: ${{ needs.evidence-plan.outputs.plan }}
+          FACTORY_WORKDIR: ${{ github.workspace }}/head
