@@ -89,6 +89,26 @@ describe("createGit", () => {
     expect(await other.filesAgainst("origin/main")).toEqual(["b.ts"]);
   });
 
+  it("resolves refs and checks ancestry of HEAD over a base SHA", async () => {
+    const { work, port } = await setup();
+    const base = await port.revParse("origin/main");
+    expect(base).toMatch(/^[0-9a-f]{40}$/);
+    await port.checkoutNewBranch("factory/issue-6", base);
+    writeFileSync(path.join(work, "c.ts"), "c\n");
+    await port.commitAll("c");
+    expect(await port.isAncestor(base)).toBe(true);
+    // 기반 커밋과 무관한 고아 히스토리는 후손이 아니다.
+    git(work, "checkout", "--orphan", "unrelated");
+    writeFileSync(path.join(work, "o.ts"), "o\n");
+    git(work, "add", "-A");
+    git(work, "commit", "-m", "orphan");
+    expect(await port.isAncestor(base)).toBe(false);
+    // 저장소에 없는 SHA는 오류가 아니라 false다(fail closed).
+    expect(await port.isAncestor("0".repeat(40))).toBe(false);
+    await expect(port.isAncestor("HEAD~1")).rejects.toThrow(/invalid sha/);
+    await expect(port.revParse("--all")).rejects.toThrow(/invalid ref/);
+  });
+
   it("returns false on a rebase conflict and leaves no rebase in progress", async () => {
     const { root, origin, work, port } = await setup();
     await port.checkoutNewBranch("factory/issue-4", "origin/main");

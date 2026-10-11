@@ -84,6 +84,8 @@ export interface GitHubPort {
     draft: boolean;
   }): Promise<number>;
   updatePullBody(n: number, body: string): Promise<void>;
+  // draft PR을 ready for review로 바꾼다(GraphQL markPullRequestReadyForReview).
+  markReady(n: number): Promise<void>;
   createReview(
     n: number,
     input: { event: "COMMENT"; body: string; commitId: string },

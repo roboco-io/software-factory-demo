@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { TimedResult } from "../agents/budget";
 import type { Budget, EngineName, FailureReason, Role } from "../agents/types";
 import type { GitHubPort, Issue, Permission } from "../github/port";
@@ -11,6 +12,20 @@ import {
   type State,
 } from "../state/machine";
 import type { Settings, StageDeps } from "./deps";
+
+// agent VM이 만든 결과 파일 안의 에이전트 실행 결과를 검증하는 스키마.
+export const TimedResultSchema = z.object({
+  ok: z.boolean(),
+  summary: z.string(),
+  model: z.string(),
+  turns: z.number().int().min(0),
+  costUsd: z.number().min(0).optional(),
+  usage: z.object({ inputTokens: z.number().min(0), outputTokens: z.number().min(0) }),
+  failureReason: z
+    .enum(["max_turns", "timeout", "budget", "engine_error", "invalid_output"])
+    .optional(),
+  durationMs: z.number().min(0),
+});
 
 export const WRITE_PERMISSIONS: readonly Permission[] = ["admin", "maintain", "write"];
 export const ROUND_PREFIX = "factory:round-";

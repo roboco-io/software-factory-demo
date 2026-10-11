@@ -121,6 +121,36 @@ describe("createOctokitPort", () => {
     expect(await gh.mergePull(7, { sha: "s", title: "t", message: "m" })).toBe(false);
   });
 
+  it("marks a draft PR ready through GraphQL, and skips a PR that is already ready", async () => {
+    const calls: string[] = [];
+    const gh = port(
+      [
+        {
+          method: "GET",
+          path: /pulls\/7$/,
+          status: 200,
+          body: { number: 7, draft: true, node_id: "PR_node" },
+        },
+        {
+          method: "GET",
+          path: /pulls\/8$/,
+          status: 200,
+          body: { number: 8, draft: false, node_id: "PR_other" },
+        },
+        {
+          method: "POST",
+          path: /graphql$/,
+          status: 200,
+          body: { data: { markPullRequestReadyForReview: { pullRequest: { id: "PR_node" } } } },
+        },
+      ],
+      calls,
+    );
+    await gh.markReady(7);
+    await gh.markReady(8);
+    expect(calls.filter((c) => c.startsWith("POST"))).toEqual(["POST /graphql"]);
+  });
+
   it("dispatches workflows on main", async () => {
     const calls: string[] = [];
     const gh = port([{ method: "POST", path: /dispatches$/, status: 204, body: null }], calls);

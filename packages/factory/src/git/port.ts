@@ -18,6 +18,10 @@ export interface GitPort {
   importBundle(file: string, branch: string): Promise<void>;
   push(branch: string, token: string): Promise<void>;
   headSha(): Promise<string>;
+  // ref(origin/main, 팩토리 브랜치, 40자 SHA)를 커밋 SHA로 푼다.
+  revParse(ref: string): Promise<string>;
+  // base(40자 SHA)가 HEAD의 조상(또는 같은 커밋)이면 true. 객체가 없거나 오류면 false(fail closed).
+  isAncestor(base: string): Promise<boolean>;
 }
 
 function splitZ(out: string): string[] {
@@ -25,7 +29,8 @@ function splitZ(out: string): string[] {
 }
 
 const BRANCH = /^(main|factory\/issue-[1-9]\d*)$/;
-const START_POINT = /^(origin\/)?(main|factory\/issue-[1-9]\d*)$/;
+const SHA = /^[0-9a-f]{40}$/;
+const START_POINT = /^((origin\/)?(main|factory\/issue-[1-9]\d*)|[0-9a-f]{40})$/;
 
 function assertRef(kind: string, value: string, re: RegExp): void {
   if (!re.test(value)) throw new Error(`git: invalid ${kind}: ${JSON.stringify(value)}`);
@@ -126,6 +131,15 @@ export function createGit(
     },
     async headSha() {
       return (await git("rev-parse", ["rev-parse", "HEAD"])).stdout.trim();
+    },
+    async revParse(ref) {
+      assertRef("ref", ref, START_POINT);
+      return (await git("rev-parse", ["rev-parse", "--verify", `${ref}^{commit}`])).stdout.trim();
+    },
+    async isAncestor(baseSha) {
+      assertRef("sha", baseSha, SHA);
+      const r = await git("merge-base", ["merge-base", "--is-ancestor", baseSha, "HEAD"], true);
+      return r.code === 0;
     },
   };
   return port;

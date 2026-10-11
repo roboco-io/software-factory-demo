@@ -2,6 +2,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { buildDeps } from "./main";
 import { runCommand } from "./stages/command";
+import { implementStage } from "./stages/implement";
 import type { StageDeps } from "./stages/deps";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
 import { triageStage } from "./stages/triage";
@@ -91,6 +92,15 @@ export const COMMANDS: Record<string, Handler> = {
     });
     ctx.stdout(outcome);
     return 0;
+  },
+  implement: (ctx, v) => {
+    const sender = str(v, "sender");
+    return phased(
+      ctx,
+      v,
+      implementStage,
+      sender ? { issue: num(v, "issue"), sender } : { issue: num(v, "issue") },
+    );
   },
 };
 

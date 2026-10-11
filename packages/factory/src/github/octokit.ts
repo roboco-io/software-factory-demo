@@ -188,6 +188,14 @@ export function createOctokitPort(o: {
     async updatePullBody(n, body) {
       await octokit.rest.pulls.update({ ...base, pull_number: n, body });
     },
+    async markReady(n) {
+      const { data } = await octokit.rest.pulls.get({ ...base, pull_number: n });
+      if (!data.draft) return;
+      await octokit.graphql(
+        `mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { id } } }`,
+        { id: data.node_id },
+      );
+    },
     async createReview(n, input) {
       await octokit.rest.pulls.createReview({
         ...base,

@@ -14,6 +14,7 @@ import {
   readState,
   record,
   runLink,
+  TimedResultSchema,
 } from "./common";
 import type { PhasedStage } from "./phased";
 
@@ -30,20 +31,7 @@ export interface TriageOutcome {
   triage: Triage | null;
 }
 
-const ResultSchema = z.object({
-  ok: z.boolean(),
-  summary: z.string(),
-  model: z.string(),
-  turns: z.number().int().min(0),
-  costUsd: z.number().min(0).optional(),
-  usage: z.object({ inputTokens: z.number().min(0), outputTokens: z.number().min(0) }),
-  failureReason: z
-    .enum(["max_turns", "timeout", "budget", "engine_error", "invalid_output"])
-    .optional(),
-  durationMs: z.number().min(0),
-});
-
-const OutcomeSchema = z.object({ result: ResultSchema, triage: TriageSchema.nullable() });
+const OutcomeSchema = z.object({ result: TimedResultSchema, triage: TriageSchema.nullable() });
 
 export const triageStage: PhasedStage<{ issue: number }, TriagePlan, TriageOutcome> = {
   name: "triage",

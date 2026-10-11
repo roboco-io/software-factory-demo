@@ -17,6 +17,9 @@ export class FakeGit implements GitPort {
   readonly dir: string;
   branch = "main";
   rebaseOk = true;
+  // 번들 head가 준비 시점 base의 후손인지(false면 조상이 아닌 것으로 판정).
+  descendsFromBase = true;
+  readonly baseSha = "b".repeat(40);
   readonly messages: string[] = [];
   readonly pushes: { branch: string; sha: string; files: string[] }[] = [];
   readonly bundles: string[] = [];
@@ -82,6 +85,12 @@ export class FakeGit implements GitPort {
   }
   async headSha(): Promise<string> {
     return `sha-${this.messages.length}`;
+  }
+  async revParse(): Promise<string> {
+    return this.baseSha;
+  }
+  async isAncestor(): Promise<boolean> {
+    return this.descendsFromBase;
   }
 }
 

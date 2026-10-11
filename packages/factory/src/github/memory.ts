@@ -211,6 +211,9 @@ export class InMemoryGitHub implements GitHubPort {
   async updatePullBody(n: number, body: string): Promise<void> {
     this.mustPull(n).body = body;
   }
+  async markReady(n: number): Promise<void> {
+    this.mustPull(n).draft = false;
+  }
   async createReview(
     n: number,
     input: { event: "COMMENT"; body: string; commitId: string },
