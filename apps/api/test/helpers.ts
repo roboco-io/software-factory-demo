@@ -26,3 +26,19 @@ export async function api(
     body,
   });
 }
+
+let seq = 0;
+export async function register(
+  name = "u",
+): Promise<{ token: string; username: string; email: string }> {
+  seq += 1;
+  const username = `${name}${Date.now()}${seq}`;
+  const email = `${username}@test.com`;
+  const res = await api("/users", {
+    method: "POST",
+    body: { user: { username, email, password: "password123" } },
+  });
+  if (res.status !== 201) throw new Error(`register failed: ${res.status} ${await res.text()}`);
+  const { user } = (await res.json()) as { user: { token: string } };
+  return { token: user.token, username, email };
+}

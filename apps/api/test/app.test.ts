@@ -14,17 +14,6 @@ describe("app", () => {
     expect(await res.json()).toEqual({ errors: { route: ["not found"] } });
   });
 
-  it("malformed JSON body returns 422, not 500", async () => {
-    const res = await api("/_echo", { method: "POST", rawBody: "{not json" });
-    expect(res.status).toBe(422);
-    expect(await res.json()).toEqual({ errors: { body: ["is invalid"] } });
-  });
-
-  it("missing wrapper object returns 422", async () => {
-    const res = await api("/_echo", { method: "POST", body: { title: "x" } });
-    expect(res.status).toBe(422);
-  });
-
   it("CORS allows configured origin only", async () => {
     const ok = await api("/health", { headers: { origin: "http://localhost:5173" } });
     expect(ok.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");

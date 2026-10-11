@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AppEnv } from "./env";
 import { ApiError } from "./lib/errors";
-import { readWrapped } from "./lib/body";
+import { usersRouter } from "./routes/users";
 
 const app = new Hono<AppEnv>();
 
@@ -17,13 +17,16 @@ app.use("/api/*", async (c, next) => {
 
 const router = new Hono<AppEnv>();
 router.get("/health", (c) => c.json({ status: "ok" }));
-router.post("/_echo", async (c) => c.json({ echo: await readWrapped(c, "echo") }));
+router.route("/", usersRouter);
 
 app.route("/api", router);
 
 app.notFound((c) => c.json({ errors: { route: ["not found"] } }, 404));
 app.onError((err, c) => {
   if (err instanceof ApiError) return c.json({ errors: err.errors }, err.status);
+  const msg = String((err as { cause?: unknown }).cause ?? err.message);
+  const unique = /UNIQUE constraint failed: users\.(email|username)/.exec(msg);
+  if (unique) return c.json({ errors: { [unique[1]!]: ["has already been taken"] } }, 409);
   console.error(err);
   return c.json({ errors: { server: ["internal error"] } }, 500);
 });
