@@ -16,7 +16,7 @@ describe("factory/agents.yml budgets (spec 5.3)", () => {
     const a = assignEngines(cfg, []);
     expect(a.triage).toEqual({
       engine: "pi",
-      budget: { maxTurns: 10, timeoutMs: 300_000, maxUsd: 0.2 },
+      budget: { maxTurns: 25, timeoutMs: 300_000, maxUsd: 0.2 },
     });
     expect(a.implement).toEqual({
       engine: "claude",

@@ -7,7 +7,7 @@ engines:
   codex: { modelEnv: CODEX_MODEL, defaultModel: null, pricePerMTok: null }
   pi: { modelEnv: PI_MODEL, defaultModel: deepseek/deepseek-flash, pricePerMTok: null }
 roles:
-  triage: { engine: pi, budget: { maxTurns: 10, timeoutMin: 5, maxUsd: 0.2 } }
+  triage: { engine: pi, budget: { maxTurns: 25, timeoutMin: 5, maxUsd: 0.2 } }
   implement: { engine: claude, budget: { maxTurns: 80, timeoutMin: 30, maxUsd: 5 } }
   fix: { engine: same-as-implement, budget: { maxTurns: 40, timeoutMin: 20, maxUsd: 3 } }
   review:

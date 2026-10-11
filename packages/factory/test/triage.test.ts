@@ -22,7 +22,7 @@ describe("triage stage", () => {
     expect(comment.body).toContain("tests/realworld/skip.txt에서 tags.hurl");
     expect(pi.calls[0]?.readOnly).toBe(true);
     expect(pi.calls[0]?.prompt).toContain("#1 기존 이슈");
-    expect(pi.calls[0]?.budget).toEqual({ maxTurns: 10, timeoutMs: 300_000, maxUsd: 0.2 });
+    expect(pi.calls[0]?.budget).toEqual({ maxTurns: 25, timeoutMs: 300_000, maxUsd: 0.2 });
     const runs = await h.deps.runs.since(new Date(0));
     expect(runs).toMatchObject([
       {

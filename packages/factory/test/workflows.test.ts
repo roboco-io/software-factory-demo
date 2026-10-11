@@ -81,6 +81,22 @@ describe("factory workflows", () => {
     }
   });
 
+  it("allow unprivileged user namespaces before running an agent, so the Codex sandbox works on ubuntu-24.04", () => {
+    const SYSCTL = "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0";
+    for (const file of AGENT_WORKFLOWS) {
+      const agentSteps = load(file).jobs.agent!.steps;
+      const sysctl = agentSteps.findIndex((s) => s.run === SYSCTL);
+      const run = agentSteps.findIndex((s) => s.run?.includes("--phase agent"));
+      expect(sysctl, file).toBeGreaterThanOrEqual(0);
+      expect(sysctl, file).toBeLessThan(run);
+    }
+    const contract = load("factory-contract.yml").jobs.contract!.steps;
+    expect(contract.findIndex((s) => s.run === SYSCTL)).toBeLessThan(
+      contract.findIndex((s) => s.run?.includes("test:contract")),
+    );
+    expect(contract.some((s) => s.run === SYSCTL)).toBe(true);
+  });
+
   it("split agent workflows into prepare, agent and publish jobs, with no GitHub token in the agent job", () => {
     for (const file of AGENT_WORKFLOWS) {
       const wf = load(file);

@@ -16,6 +16,9 @@ jobs:
       - uses: actions/setup-node@v7
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # Codex CLI의 Linux 샌드박스(bubblewrap)는 비특권 user namespace가 필요하다.
+      # ubuntu-24.04 러너는 AppArmor가 이를 막으므로 에이전트 실행 전에 해제한다.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm --filter factory test:contract
         env:
           FACTORY_CONTRACT: "1"
