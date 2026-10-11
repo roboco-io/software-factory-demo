@@ -287,6 +287,19 @@ describe("modified P1 workflows", () => {
     expect(action.with?.token).toBe("${{ secrets.GITHUB_TOKEN }}");
   });
 
+  it("preview.yml: every checkout drops credentials; cleanup runs trusted default-branch code with an explicit token (FR-b)", () => {
+    const wf = load("preview.yml");
+    for (const [name, job] of Object.entries(wf.jobs)) {
+      for (const step of checkouts(job)) {
+        expect(step.with?.["persist-credentials"], name).toBe(false);
+      }
+    }
+    const cleanup = wf.jobs.cleanup!;
+    expect(checkouts(cleanup)[0]!.with?.ref).toBe("${{ github.event.repository.default_branch }}");
+    const remove = cleanup.steps.find((s) => s.uses?.startsWith("rossjrw/pr-preview-action"))!;
+    expect(remove.with?.token).toBe("${{ secrets.GITHUB_TOKEN }}");
+  });
+
   it("factory-merge.yml runs on-closed for every closed bot PR, merged or not (I-2)", () => {
     const job = load("factory-merge.yml").jobs.closed!;
     expect(job.if).not.toContain("merged");
