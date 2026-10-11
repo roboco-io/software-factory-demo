@@ -11,6 +11,8 @@ export interface RiskReport {
   botAuthor: boolean;
   role: "implement" | "improve" | null;
   forbidden: string[];
+  // sha를 받았는데 PR head가 그 SHA가 아니면 true다. 판정한 커밋과 배포할 커밋이 다를 수 있으므로 프리뷰를 막는다.
+  stale: boolean;
   previewAllowed: boolean;
 }
 
@@ -33,7 +35,7 @@ export function addsSkipEntries(files: ChangedFile[]): boolean {
 
 export async function runRisk(
   deps: StageDeps,
-  args: { pr: number; check: boolean },
+  args: { pr: number; check: boolean; sha?: string },
 ): Promise<RiskReport> {
   const pull = await deps.gh.getPull(args.pr);
   let changed: ChangedFile[] | null = null;
@@ -57,7 +59,8 @@ export async function runRisk(
       if (addsSkipEntries(changed)) forbidden.push(SKIP_FILE);
     }
   }
-  const previewAllowed = !(botAuthor && (risk.tier === "T2" || risk.tier === "T3"));
+  const stale = args.sha !== undefined && pull.headSha !== args.sha;
+  const previewAllowed = !stale && !(botAuthor && (risk.tier === "T2" || risk.tier === "T3"));
   if (args.check) {
     const wanted = `risk:${risk.tier}`;
     for (const l of pull.labels)
@@ -71,6 +74,7 @@ export async function runRisk(
     botAuthor,
     role,
     forbidden,
+    stale,
     previewAllowed,
   };
 }

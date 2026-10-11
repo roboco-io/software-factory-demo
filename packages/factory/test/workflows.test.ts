@@ -221,6 +221,7 @@ describe("factory workflows", () => {
     for (const file of ALL) {
       for (const step of steps(load(file))) {
         expect(step.run ?? "", `${file}: ${step.run}`).not.toContain("${{ github.event.");
+        expect(step.run ?? "", `${file}: ${step.run}`).not.toMatch(/\$\{\{\s*github\.head_ref/);
       }
     }
     for (const file of FACTORY) {
@@ -263,11 +264,11 @@ describe("modified P1 workflows", () => {
     expect(wf.jobs.deploy!.if).toContain("needs.policy.outputs.allowed == 'true'");
     const checkout = wf.jobs.policy!.steps.find((s) => s.uses?.startsWith("actions/checkout@"))!;
     expect(checkout.with?.ref).toBe("${{ github.event.pull_request.base.sha }}");
-    expect(
-      wf.jobs.policy!.steps.some(
-        (s) => s.run?.includes("factory risk --pr") && s.run.includes("--json"),
-      ),
-    ).toBe(true);
+    const risk = wf.jobs.policy!.steps.find((s) => s.run?.includes("factory risk --pr"))!;
+    expect(risk.run).toContain("--json");
+    // 이벤트의 head SHA로 판정을 묶는다. PR head가 그 사이 바뀌었으면 CLI가 previewAllowed=false를 낸다.
+    expect(risk.run).toContain('--sha "$HEAD_SHA"');
+    expect(risk.env?.HEAD_SHA).toBe("${{ github.event.pull_request.head.sha }}");
     expect(JSON.stringify(wf.jobs.policy)).not.toMatch(/CLOUDFLARE/);
   });
 

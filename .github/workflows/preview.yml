@@ -40,16 +40,19 @@ jobs:
           cache-dependency-path: base/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: base
-      # 첫 줄은 base에 팩토리 CLI가 아직 없는 P2 도입 PR만 해당한다. 판정이 실패하면 allowed가 비어 배포하지 않는다.
+      # 첫 줄은 base에 팩토리 CLI가 아직 없는 P2 도입 PR만 해당한다. 판정이 실패하거나 PR head가 이벤트의 SHA에서 바뀌었으면 배포하지 않는다.
       - id: risk
         working-directory: base
         run: |
           if [ ! -f packages/factory/src/cli.ts ]; then echo "allowed=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          pnpm -s factory risk --pr "$PR" --json > "$RUNNER_TEMP/risk.json"
-          echo "allowed=$(jq -r .previewAllowed "$RUNNER_TEMP/risk.json")" >> "$GITHUB_OUTPUT"
+          pnpm -s factory risk --pr "$PR" --sha "$HEAD_SHA" --json > "$RUNNER_TEMP/risk.json"
+          jq -r '"allowed=\(.previewAllowed)", "stale=\(.stale)"' "$RUNNER_TEMP/risk.json" >> "$GITHUB_OUTPUT"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - if: steps.risk.outputs.allowed != 'true'
+          # 이 이벤트의 head SHA다. 판정 시점에 PR head가 바뀌었으면 previewAllowed=false로 배포하지 않는다.
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      # head가 바뀐 경우(stale)는 새 push의 preview run이 다시 판정하므로 코멘트를 남기지 않는다.
+      - if: steps.risk.outputs.allowed != 'true' && steps.risk.outputs.stale != 'true'
         uses: marocchino/sticky-pull-request-comment@v3.0.5
         with:
           header: api-preview

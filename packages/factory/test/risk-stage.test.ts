@@ -48,6 +48,16 @@ describe("runRisk", () => {
     expect((await runRisk(h.deps, { pr: t1.pr, check: false })).previewAllowed).toBe(true);
   });
 
+  it("disallows previews when the PR head moved past the event's head SHA (fail closed)", async () => {
+    const h = makeTestDeps();
+    const t1 = await openBotPr(h, {}, ["apps/api/src/routes/tags.ts"]);
+    const head = (await h.gh.getPull(t1.pr)).headSha;
+    const same = await runRisk(h.deps, { pr: t1.pr, check: false, sha: head });
+    expect(same).toMatchObject({ previewAllowed: true, stale: false });
+    const moved = await runRisk(h.deps, { pr: t1.pr, check: false, sha: "f".repeat(40) });
+    expect(moved).toMatchObject({ previewAllowed: false, stale: true });
+  });
+
   it("replaces stale risk labels when checking", async () => {
     const h = makeTestDeps();
     const { pr } = await openBotPr(h);

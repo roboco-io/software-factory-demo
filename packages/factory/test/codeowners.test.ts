@@ -52,6 +52,8 @@ describe(".github/CODEOWNERS", () => {
     "apps/web/AGENTS.md",
     "apps/api/src/CLAUDE.md",
     ".claude/settings.json",
+    "apps/web/.claude/settings.json",
+    "apps/api/.agents/config.yml",
     ".agents/skills/x.md",
     "scripts/realworld-api.sh",
     "tests/realworld/vendor/tags.hurl",

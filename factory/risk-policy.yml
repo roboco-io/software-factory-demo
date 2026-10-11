@@ -17,6 +17,8 @@ rules:
       - "**/CLAUDE.md"
       - ".claude/**"
       - ".agents/**"
+      - "**/.claude/**"
+      - "**/.agents/**"
       # 게이트를 실행하는 스크립트와 고정된 공식 테스트는 바꾸면 검증을 우회할 수 있다.
       - "scripts/**"
       - "tests/realworld/vendor/**"

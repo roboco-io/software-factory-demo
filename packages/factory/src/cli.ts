@@ -131,9 +131,11 @@ export const COMMANDS: Record<string, Handler> = {
     return 0;
   },
   risk: async (ctx, v) => {
+    const sha = str(v, "sha");
     const report = await runRisk(ctx.buildDeps(ctx.env, "all"), {
       pr: num(v, "pr"),
       check: v.check === true,
+      ...(sha ? { sha } : {}),
     });
     ctx.stdout(
       v.json === true
