@@ -1,0 +1,124 @@
+import { pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
+import { buildDeps } from "./main";
+import type { StageDeps } from "./stages/deps";
+import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
+import { triageStage } from "./stages/triage";
+
+export interface CliContext {
+  env: NodeJS.ProcessEnv;
+  buildDeps(env: NodeJS.ProcessEnv, phase: Phase): StageDeps;
+  stdout(s: string): void;
+}
+
+type Values = Record<string, string | boolean | undefined>;
+type Handler = (ctx: CliContext, v: Values) => Promise<number>;
+
+class UsageError extends Error {}
+
+const OPTIONS = {
+  issue: { type: "string" },
+  pr: { type: "string" },
+  sha: { type: "string" },
+  branch: { type: "string" },
+  reason: { type: "string" },
+  sender: { type: "string" },
+  actor: { type: "string" },
+  phase: { type: "string" },
+  state: { type: "string" },
+  outcome: { type: "string" },
+  json: { type: "boolean" },
+  check: { type: "boolean" },
+} as const;
+
+const PHASES: readonly Phase[] = ["prepare", "agent", "publish", "all"];
+
+function num(v: Values, name: string): number {
+  const raw = v[name];
+  if (typeof raw !== "string" || !/^[1-9]\d*$/.test(raw)) {
+    throw new UsageError(`--${name} <양의 정수>가 필요하다`);
+  }
+  return Number(raw);
+}
+
+function optNum(v: Values, name: string): number | undefined {
+  return v[name] === undefined ? undefined : num(v, name);
+}
+
+function str(v: Values, name: string): string | null {
+  const raw = v[name];
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
+function reqStr(v: Values, name: string): string {
+  const s = str(v, name);
+  if (!s) throw new UsageError(`--${name} <값>이 필요하다`);
+  return s;
+}
+
+function phaseOf(v: Values): Phase {
+  const p = str(v, "phase") ?? "all";
+  if (!(PHASES as readonly string[]).includes(p)) {
+    throw new UsageError(`--phase는 ${PHASES.join("|")} 중 하나다`);
+  }
+  return p as Phase;
+}
+
+async function phased<A, P, O>(
+  ctx: CliContext,
+  v: Values,
+  stage: PhasedStage<A, P, O>,
+  args: A,
+): Promise<number> {
+  const phase = phaseOf(v);
+  await runPhase(stage, phase, ctx.buildDeps(ctx.env, phase), args, {
+    plan: str(v, "state"),
+    outcome: str(v, "outcome"),
+  });
+  return 0;
+}
+
+export const COMMANDS: Record<string, Handler> = {
+  triage: (ctx, v) => phased(ctx, v, triageStage, { issue: num(v, "issue") }),
+};
+
+export async function main(argv: string[], ctx: CliContext): Promise<number> {
+  const [command, ...rest] = argv;
+  const handler = command ? COMMANDS[command] : undefined;
+  if (!handler) {
+    ctx.stdout(`usage: pnpm factory <${Object.keys(COMMANDS).join("|")}> [options]`);
+    return 2;
+  }
+  try {
+    const { values } = parseArgs({
+      args: rest,
+      options: OPTIONS,
+      strict: true,
+      allowPositionals: false,
+    });
+    return await handler(ctx, values as Values);
+  } catch (e) {
+    if (
+      e instanceof UsageError ||
+      (e instanceof Error && "code" in e && String(e.code).startsWith("ERR_PARSE_ARGS"))
+    ) {
+      ctx.stdout(`${command}: ${e.message}`);
+      return 2;
+    }
+    throw e;
+  }
+}
+
+// 이후 Task에서 COMMANDS에 추가하는 핸들러가 쓰는 인자 헬퍼.
+export { optNum, reqStr, str, num };
+
+// 테스트에서 import할 때는 실행하지 않는다.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main(process.argv.slice(2), { env: process.env, buildDeps, stdout: (s) => console.log(s) }).then(
+    (code) => process.exit(code),
+    (err: unknown) => {
+      console.error(err);
+      process.exit(1);
+    },
+  );
+}
