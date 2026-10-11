@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { runWithBudget, type TimedResult } from "../agents/budget";
-import { loadPrompt, renderPrompt } from "../agents/prompt";
+import { bugRuleFor, loadPrompt, renderPrompt } from "../agents/prompt";
 import type { Budget, EngineName } from "../agents/types";
 import { assignEngines, resolveModel } from "../config/agents";
 import { CHECK_SCRIPTS, formatCheckFailures } from "../exec/checks";
@@ -168,6 +168,7 @@ export const implementStage: PhasedStage<ImplementArgs, ImplementPlan, Implement
         criteria.length > 0
           ? criteria.map((c) => `- ${c}`).join("\n")
           : "(트리아지 수용 기준 없음. 이슈 본문을 기준으로 한다.)",
+      bugRule: bugRuleFor(issue.labels),
     });
     await deps.git.fetch("main");
     const baseSha = await deps.git.revParse("origin/main");

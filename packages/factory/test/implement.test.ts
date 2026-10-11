@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { BUG_RULE, NOT_BUG_RULE } from "../src/agents/prompt";
 import { createFakeAdapter, loadFakeScript, type FakeStep } from "../src/agents/fake";
 import { renderTriageComment } from "../src/report/comments";
 import { parsePrMeta } from "../src/report/pr";
@@ -47,6 +48,19 @@ const lastComment = async (h: TestHarness, n: number) =>
   (await h.gh.listComments(n)).at(-1)?.body ?? "";
 
 describe("implement stage", () => {
+  it("puts the reproduction-test rule into the prompt of type:bug issues only", async () => {
+    const bugAgent = createFakeAdapter([TAGS], "claude");
+    const bugH = makeTestDeps({ adapters: { claude: bugAgent } });
+    await run(bugH, approvedIssue(bugH, ["factory:approved", "type:bug"]), BOT);
+    expect(bugAgent.calls[0]?.prompt).toContain(BUG_RULE);
+
+    const featureAgent = createFakeAdapter([TAGS], "claude");
+    const featureH = makeTestDeps({ adapters: { claude: featureAgent } });
+    await run(featureH, approvedIssue(featureH), BOT);
+    expect(featureAgent.calls[0]?.prompt).toContain(NOT_BUG_RULE);
+    expect(featureAgent.calls[0]?.prompt).not.toContain(BUG_RULE);
+  });
+
   it("implements, checks, commits with trailers, opens a T1 PR and moves to in-review", async () => {
     const claude = createFakeAdapter([TAGS], "claude");
     const h = makeTestDeps({ adapters: { claude } });
