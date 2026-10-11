@@ -97,6 +97,24 @@ describe("runSmokeReport", () => {
     );
   });
 
+  it("caps SMOKE_API_BASE at 200 characters", async () => {
+    const h = makeTestDeps({ settings: { env: { SMOKE_API_BASE: "a".repeat(500) } } });
+    await runSmokeReport(h.deps, { result: "failure" });
+    const body = (await h.gh.getIssue(1)).body;
+    expect(body).toContain("a".repeat(200));
+    expect(body).not.toContain("a".repeat(201));
+  });
+
+  it("opens a new issue when a human closed the smoke issue while it was failing", async () => {
+    const h = makeTestDeps();
+    await runSmokeReport(h.deps, { result: "failure" });
+    await h.gh.closeIssue(1);
+    expect(await runSmokeReport(h.deps, { result: "failure" })).toEqual({
+      action: "created",
+      issue: 2,
+    });
+  });
+
   it("neutralizes marker, mention and closing keyword in SMOKE_API_BASE", async () => {
     const h = makeTestDeps({
       settings: {
@@ -127,10 +145,8 @@ describe("production smoke files", () => {
     expect(spec).not.toMatch(/\.fill\(|\.click\(|\.press\(|request\.(post|put|patch|delete)/);
   });
 
-  it("keeps the feedback e2e from running against the production origin", () => {
+  it("gates the feedback e2e with feedbackAllowed", () => {
     const spec = readFileSync(path.join(REPO_ROOT, "apps/web/e2e/feedback.spec.ts"), "utf8");
-    expect(spec).toContain("https://roboco.io");
-    expect(spec).toContain("process.env.WEB_URL");
-    expect(spec).toMatch(/test\.skip\(isProductionOrigin\(\)/);
+    expect(spec).toMatch(/test\.skip\(\s*!feedbackAllowed\(process\.env\.E2E_BASE_URL\)/);
   });
 });

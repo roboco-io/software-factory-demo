@@ -47,7 +47,7 @@ function failureStreak(issue: Issue, comments: Comment[], settings: Settings): n
 }
 
 function target(settings: Settings): string {
-  const injected = settings.env.SMOKE_API_BASE?.trim();
+  const injected = settings.env.SMOKE_API_BASE?.trim().slice(0, 200);
   return injected ? `검증용으로 지정한 API \`${codeCell(injected)}\`` : "프로덕션 API와 웹";
 }
 
