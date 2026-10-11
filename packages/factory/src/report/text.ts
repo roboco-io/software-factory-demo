@@ -2,7 +2,7 @@ import type { z } from "zod";
 
 // 에이전트·이슈 텍스트가 팩토리 표식(HTML 주석)을 열거나 닫지 못하게 한다.
 export function sanitize(text: string): string {
-  return text.replace(/<!--/g, "&lt;!--").replace(/-->/g, "--&gt;");
+  return text.replace(/<!--/g, "&lt;!--").replace(/--\s*!?\s*>/g, (m) => `${m.slice(0, -1)}&gt;`);
 }
 
 export function writeMarker(name: string, value: unknown): string {
@@ -25,6 +25,7 @@ export function readMarker<T>(body: string, name: string, schema: z.ZodType<T>):
 // 표 셀·한 줄 필드용: 줄바꿈을 공백으로, 표 구분자 `|`를 이스케이프한다.
 export function cell(s: string): string {
   return neutralizeRefs(sanitize(s))
+    .replace(/\\/g, "\\\\")
     .replace(/\|/g, "\\|")
     .replace(/\r\n|\r|\n/g, " ");
 }

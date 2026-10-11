@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { cell, sanitize } from "../src/report/text";
 import { commitMessage, parseFactoryIssues } from "../src/report/commit";
 import {
   findTriage,
@@ -250,5 +251,20 @@ describe("cell and comment edge cases", () => {
     const body = renderPrBody(report({ checks: [{ name: "a\rb", ok: true }] }));
     expect(body).not.toContain("\r");
     expect(body).toContain("`a b`");
+  });
+});
+
+describe("text sanitizers (CodeQL)", () => {
+  it("neutralizes alternate comment closers", () => {
+    for (const closer of ["-->", "--!>", "-- >", "--\t!  >"]) {
+      const out = sanitize(`x ${closer} y`);
+      expect(out, closer).not.toMatch(/--\s*!?\s*>/);
+    }
+    expect(sanitize("<!-- a")).not.toContain("<!--");
+  });
+
+  it("escapes backslashes before pipes in cells", () => {
+    expect(cell("a\\|b")).toBe("a\\\\\\|b");
+    expect(cell("a|b")).toBe("a\\|b");
   });
 });
