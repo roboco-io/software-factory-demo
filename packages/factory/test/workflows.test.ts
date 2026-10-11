@@ -270,6 +270,9 @@ describe("modified P1 workflows", () => {
     expect(checkout.with?.["persist-credentials"]).toBe(false);
     const run = job.steps.find((s) => s.run?.includes("factory risk --pr"))!;
     expect(run.run).toContain("--check");
+    // spec 7.1.1: base에 CLI가 없으면 건너뛰던 P2 도입용 분기를 지웠다. CLI가 사라지면 체크가 실패해야 한다.
+    expect(run.run).not.toContain("cli.ts");
+    expect(run.run?.trim()).toBe('pnpm -s factory risk --pr "$PR" --check');
     expect(run["working-directory"]).toBe(checkout.with?.path);
     expect(checkout.with?.path).toBe("base");
   });
@@ -282,6 +285,8 @@ describe("modified P1 workflows", () => {
     expect(checkout.with?.ref).toBe("${{ github.event.pull_request.base.sha }}");
     const risk = wf.jobs.policy!.steps.find((s) => s.run?.includes("factory risk --pr"))!;
     expect(risk.run).toContain("--json");
+    expect(risk.run).not.toContain("cli.ts");
+    expect(risk.run).not.toMatch(/allowed=true/);
     // 이벤트의 head SHA로 판정을 묶는다. PR head가 그 사이 바뀌었으면 CLI가 previewAllowed=false를 낸다.
     expect(risk.run).toContain('--sha "$HEAD_SHA"');
     expect(risk.env?.HEAD_SHA).toBe("${{ github.event.pull_request.head.sha }}");

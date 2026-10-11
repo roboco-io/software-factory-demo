@@ -31,7 +31,6 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
 - prepare job이 이슈를 `factory:in-progress`로 옮긴 뒤 실패하면(agent·publish job이 돌지 않음) 이슈가 `factory:in-progress`에 남는다. `@factory retry`는 `in-progress` 상태에서는 거부되므로, 쓰기 권한자가 `@factory stop`을 남겨 `factory:needs-human`으로 옮긴 다음 `@factory retry`로 다시 시작한다. `guard` 워크플로는 이 상태를 자동으로 복구하지 않는다.
 - 연속 병합으로 대기 중이던 `deploy` run이 취소되면 그 커밋의 이슈가 `factory:merged`에 남는다. 이후 배포가 성공했는지 확인한 뒤 `pnpm -s factory deployed --sha <sha>`로 반영한다(`FACTORY_TOKEN` 필요).
 - 리뷰가 멈췄거나 리뷰 run이 취소되어 PR이 `factory:in-review`에 남으면 `gh workflow run factory-review.yml -f pr=<n> -f issue=<n>`으로 리뷰를 다시 시작한다(`<n>`은 각각 PR 번호와 이슈 번호).
-- 임시 조치: `ci.yml`의 `risk-tier` job과 `preview.yml`의 `policy` job은 base에 `packages/factory/src/cli.ts`가 없으면 판정을 건너뛴다(P2를 도입하는 PR 자체를 위한 예외). 첫 팩토리 PR이 main에 병합된 뒤 이 `[ ! -f packages/factory/src/cli.ts ]` 분기를 두 파일에서 제거한다. 제거하지 않으면 base에서 CLI가 사라져도 위험 등급 검사가 조용히 통과한다.
 
 ## 배포 롤백
 

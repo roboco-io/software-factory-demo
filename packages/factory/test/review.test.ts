@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createFakeAdapter, loadFakeScript } from "../src/agents/fake";
+import { TooManyFilesError } from "../src/github/port";
 import { latestVerdict } from "../src/report/comments";
 import { runPhase } from "../src/stages/phased";
-import { reviewStage, truncateDiff } from "../src/stages/review";
+import { heldForRisk, reviewStage, truncateDiff } from "../src/stages/review";
 import { BOT, makeTestDeps, openBotPr } from "./helpers";
 
 describe("review stage", () => {
@@ -149,5 +150,54 @@ describe("review stage", () => {
     h.gh.pulls.get(pr)!.headRef = "factory/issue-999";
     await runPhase(reviewStage, "all", h.deps, { pr }, null);
     expect(codex.calls).toHaveLength(0);
+  });
+
+  describe("risk hold (spec 7.1.1)", () => {
+    async function heldRun(fixture: "review-approve" | "review-changes", files: string[]) {
+      const codex = createFakeAdapter(loadFakeScript(fixture), "codex");
+      const h = makeTestDeps({ adapters: { codex } });
+      const { pr, issue } = await openBotPr(h, {}, files);
+      const plan = (await reviewStage.prepare(h.deps, { pr }))!;
+      const out = await reviewStage.agent(h.deps, plan);
+      // 리뷰가 도는 동안 gate가 T2·T3 PR을 needs-human으로 옮긴 상황(2026-10-11 PR #10)을 재현한다.
+      await h.gh.removeLabel(issue, "factory:in-review");
+      await h.gh.addLabels(issue, ["factory:needs-human"]);
+      await reviewStage.publish(h.deps, plan, out);
+      return { h, pr, issue };
+    }
+
+    it("posts the verdict for a T2 PR held in needs-human without changing state or dispatching", async () => {
+      const { h, pr, issue } = await heldRun("review-approve", ["apps/api/migrations/0003_x.sql"]);
+      expect(latestVerdict(await h.gh.listReviews(pr), BOT, "sha-a")?.verdict).toBe("APPROVE");
+      expect(h.gh.dispatches).toEqual([]);
+      expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:needs-human"]);
+      expect(
+        (await h.deps.runs.since(new Date(0))).filter((r) => r.role === "review"),
+      ).toHaveLength(1);
+    });
+
+    it("posts REQUEST_CHANGES for a held PR but does not start a fix round", async () => {
+      const { h, pr } = await heldRun("review-changes", ["apps/api/migrations/0003_x.sql"]);
+      expect(latestVerdict(await h.gh.listReviews(pr), BOT, "sha-a")?.verdict).toBe(
+        "REQUEST_CHANGES",
+      );
+      expect(h.gh.dispatches).toEqual([]);
+    });
+
+    it("treats a PR whose file list cannot be read as held (T3)", async () => {
+      const codex = createFakeAdapter(loadFakeScript("review-approve"), "codex");
+      const h = makeTestDeps({ adapters: { codex } });
+      const { pr } = await openBotPr(h);
+      h.gh.listPullFiles = async () => {
+        throw new TooManyFilesError("too many");
+      };
+      expect(await heldForRisk(h.deps, pr)).toBe(true);
+    });
+
+    it("posts nothing for a T1 PR that a human moved to needs-human (e.g. @factory stop)", async () => {
+      const { h, pr } = await heldRun("review-approve", ["apps/api/src/routes/tags.ts"]);
+      expect(await h.gh.listReviews(pr)).toEqual([]);
+      expect(h.gh.dispatches).toEqual([]);
+    });
   });
 });
