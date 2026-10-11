@@ -33,7 +33,3 @@ deferredRouter.on(["POST", "DELETE"], "/articles/:slug/favorite", requireAuth, a
 deferredRouter.get("/articles/feed", requireAuth, () => {
   throw notImplemented("feed");
 });
-
-deferredRouter.get("/tags", () => {
-  throw notImplemented("tags");
-});
