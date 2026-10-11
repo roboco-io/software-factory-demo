@@ -3,7 +3,14 @@ import { parseArgs } from "node:util";
 import { buildDeps } from "./main";
 import { runBootstrap } from "./stages/bootstrap";
 import { runCommand } from "./stages/command";
-import { runEvidencePlan } from "./stages/evidence";
+import {
+  EvidencePlanSchema,
+  isSha40,
+  renderEvidenceText,
+  runEvidence,
+  runEvidencePlan,
+  type EvidencePlan,
+} from "./stages/evidence";
 import { runDeployFailed, runDeployed } from "./stages/deploy";
 import { fixStage } from "./stages/fix";
 import { runGate, runOnClosed } from "./stages/gate";
@@ -70,7 +77,7 @@ function reqStr(v: Values, name: string): string {
 
 function sha40(v: Values, name: string): string {
   const s = reqStr(v, name);
-  if (!/^[0-9a-f]{40}$/.test(s)) throw new UsageError(`--${name}는 40자리 소문자 16진수여야 한다`);
+  if (!isSha40(s)) throw new UsageError(`--${name}는 40자리 소문자 16진수여야 한다`);
   return s;
 }
 
@@ -194,6 +201,21 @@ export const COMMANDS: Record<string, Handler> = {
         : `evidence ${plan.required ? "required" : "not required"}: ${plan.reason}`,
     );
     return 0;
+  },
+  "evidence-run": async (ctx, v) => {
+    // 계획은 다른 job이 넘긴 값이다. 형식이 틀리거나 없으면(evidence-plan job 실패) 통과시키지 않는다.
+    let plan: EvidencePlan;
+    try {
+      plan = EvidencePlanSchema.parse(JSON.parse(ctx.env.EVIDENCE_PLAN ?? ""));
+    } catch {
+      ctx.stdout(
+        "evidence 실패: EVIDENCE_PLAN(판정 계획)이 없거나 형식이 틀렸다. evidence-plan job 결과를 확인한다.",
+      );
+      return 1;
+    }
+    const result = await runEvidence(ctx.buildDeps(ctx.env, "agent"), plan);
+    ctx.stdout(v.json === true ? JSON.stringify(result) : renderEvidenceText(result));
+    return result.ok ? 0 : 1;
   },
 };
 

@@ -99,4 +99,63 @@ describe("cli main", () => {
       await main(["evidence", "--pr", String(pr), "--sha", "HEAD", "--base", base], context(h)),
     ).toBe(2);
   });
+
+  const evidencePlan = (over: Record<string, unknown> = {}): string =>
+    JSON.stringify({
+      pr: 3,
+      required: false,
+      reason: "사람 PR",
+      reasonCode: "not_bug",
+      baseSha: "b".repeat(40),
+      headSha: "a".repeat(40),
+      testFiles: [],
+      ...over,
+    });
+
+  it("evidence-run fails closed when the plan is missing or malformed, without building deps", async () => {
+    const h = makeTestDeps();
+    const phases: Phase[] = [];
+    for (const raw of [
+      undefined,
+      "",
+      "{}",
+      '{"pr":1,"required":false}',
+      evidencePlan({ testFiles: ["apps/web/src/-x.test.ts"] }),
+      evidencePlan({ headSha: "HEAD" }),
+    ]) {
+      const out: string[] = [];
+      const ctx = {
+        ...context(h, phases, out),
+        env: raw === undefined ? {} : { EVIDENCE_PLAN: raw },
+      };
+      expect(await main(["evidence-run"], ctx)).toBe(1);
+      expect(out[0]).toContain("EVIDENCE_PLAN");
+    }
+    expect(phases).toEqual([]);
+  });
+
+  it("evidence-run builds agent-phase deps and passes a plan that does not require evidence", async () => {
+    const h = makeTestDeps();
+    const phases: Phase[] = [];
+    const out: string[] = [];
+    const ctx = { ...context(h, phases, out), env: { EVIDENCE_PLAN: evidencePlan() } };
+    expect(await main(["evidence-run"], ctx)).toBe(0);
+    expect(phases).toEqual(["agent"]);
+    expect(out[0]).toContain("evidence 통과");
+    expect(out[0]).toContain("reasonCode=not_bug");
+  });
+
+  it("evidence-run fails a required plan without test files and prints JSON with reasonCode", async () => {
+    const h = makeTestDeps();
+    const out: string[] = [];
+    const raw = evidencePlan({ required: true, reasonCode: "unknown_state" });
+    const ctx = { ...context(h, [], out), env: { EVIDENCE_PLAN: raw } };
+    expect(await main(["evidence-run", "--json"], ctx)).toBe(1);
+    expect(JSON.parse(out[0]!)).toMatchObject({
+      pr: 3,
+      ok: false,
+      required: true,
+      reasonCode: "unknown_state",
+    });
+  });
 });
