@@ -83,7 +83,8 @@ export function tierOf(file: string, policy: RiskPolicy): FileTier {
   const f = normalizePath(file);
   for (const rule of policy.rules) {
     for (const pattern of rule.patterns) {
-      if (picomatch.isMatch(f, pattern, { dot: true }))
+      // T3는 대소문자를 무시한다. 대소문자 무시 파일시스템에서 Agents.md 같은 이름으로 에이전트 지침을 바꾸는 우회를 막는다.
+      if (picomatch.isMatch(f, pattern, { dot: true, nocase: rule.tier === "T3" }))
         return { file: f, tier: rule.tier, pattern };
     }
   }

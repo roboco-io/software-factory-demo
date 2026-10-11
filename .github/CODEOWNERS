@@ -8,6 +8,13 @@
 /packages/factory/ @serithemage
 AGENTS.md @serithemage
 CLAUDE.md @serithemage
+AGENTS.override.md @serithemage
+CLAUDE.local.md @serithemage
+# CODEOWNERS는 대소문자를 구분한다. 정책은 대소문자 무시로 T3이므로 소문자 변형을 함께 둔다.
+agents.md @serithemage
+claude.md @serithemage
+agents.override.md @serithemage
+claude.local.md @serithemage
 .claude/ @serithemage
 .agents/ @serithemage
 /scripts/ @serithemage
