@@ -26,7 +26,7 @@ const fb = (over: Record<string, unknown> = {}) => ({
 });
 
 function fake(payload: unknown) {
-  const acks: { errors: string[]; feedback: number[] }[] = [];
+  const acks: { errors: { fingerprint: string; lastSeen: string }[]; feedback: number[] }[] = [];
   const client: IntakeClient = {
     pending: async () => payload,
     ack: async (input) => {
@@ -52,7 +52,9 @@ describe("runIntake", () => {
     expect(issue.title).toBe("[에러] Error: article {n} failed");
     expect(issue.body).toContain(`<!-- factory:intake {"kind":"error","key":"${FP}"} -->`);
     expect(issue.body).toContain("```text\nError: article {n} failed\n```");
-    expect(acks).toEqual([{ errors: [FP], feedback: [] }]);
+    expect(acks).toEqual([
+      { errors: [{ fingerprint: FP, lastSeen: error().lastSeen }], feedback: [] },
+    ]);
     expect(await h.deps.runs.since(new Date(0))).toMatchObject([
       { role: "intake", issue: 1, ok: true },
     ]);
@@ -68,7 +70,9 @@ describe("runIntake", () => {
     expect(await runIntake(h.deps, again.client)).toMatchObject({ created: [], updated: [1] });
     expect(h.gh.issues.size).toBe(1);
     expect((await h.gh.listComments(1)).at(-1)?.body).toContain("누적 3회");
-    expect(again.acks).toEqual([{ errors: [FP], feedback: [] }]);
+    expect(again.acks).toEqual([
+      { errors: [{ fingerprint: FP, lastSeen: "2026-10-12T01:00:00.000Z" }], feedback: [] },
+    ]);
   });
 
   it("opens a new issue when the earlier issue for the fingerprint was closed (regression)", async () => {
@@ -162,7 +166,9 @@ describe("runIntake", () => {
 describe("createIntakeClient", () => {
   it("sends the bearer token to both endpoints and keeps it out of error messages", async () => {
     const seen: { url: string; auth: string | null; method: string }[] = [];
+    let ackBody: unknown;
     const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith("/ack")) ackBody = JSON.parse(String(init?.body));
       seen.push({
         url: String(input),
         auth: new Headers(init?.headers).get("authorization"),
@@ -176,7 +182,15 @@ describe("createIntakeClient", () => {
     const err = (await c.pending().catch((e: unknown) => e)) as Error;
     expect(err.message).toContain("404");
     expect(err.message).not.toContain("s3cret-token");
-    await c.ack({ errors: [FP], feedback: [] });
+    await c.ack({
+      errors: [{ fingerprint: FP, lastSeen: "2026-10-12T00:00:00.000Z" }],
+      feedback: [],
+    });
+    // API(apps/api/test/intake.test.ts)가 검증하는 ack 본문 형식과 같아야 한다.
+    expect(ackBody).toEqual({
+      errors: [{ fingerprint: FP, lastSeen: "2026-10-12T00:00:00.000Z" }],
+      feedback: [],
+    });
     expect(seen).toEqual([
       { url: "https://api.test/api/_factory/intake", auth: "Bearer s3cret-token", method: "GET" },
       {
@@ -293,7 +307,9 @@ describe("runIntake hostile text and regressions", () => {
     };
     const { client, acks } = fake({ errors: [error()], feedback: [fb()] });
     expect(await runIntake(h.deps, client)).toMatchObject({ created: [1, 2], failed: 0 });
-    expect(acks).toEqual([{ errors: [FP], feedback: [7] }]);
+    expect(acks).toEqual([
+      { errors: [{ fingerprint: FP, lastSeen: error().lastSeen }], feedback: [7] },
+    ]);
   });
 
   it("fails the item (no ack) when closed issues cannot be listed", async () => {
@@ -305,5 +321,40 @@ describe("runIntake hostile text and regressions", () => {
     expect(await runIntake(h.deps, client)).toMatchObject({ created: [], failed: 1 });
     expect(h.gh.issues.size).toBe(0);
     expect(acks).toEqual([]);
+  });
+});
+
+describe("runIntake repeat-comment throttle", () => {
+  const run = (h: ReturnType<typeof makeTestDeps>, count: number, lastSeen: string) =>
+    runIntake(h.deps, fake({ errors: [error({ count, lastSeen })], feedback: [] }).client);
+  const countComments = async (h: ReturnType<typeof makeTestDeps>) =>
+    (await h.gh.listComments(1)).length;
+
+  it("comments only when the count crosses a threshold, but acks every run", async () => {
+    const h = makeTestDeps();
+    await run(h, 1, "2026-10-12T00:00:00.000Z"); // 이슈 생성
+    const seen: number[] = [];
+    let total = 0;
+    for (const count of [2, 3, 4, 5, 6, 9, 10, 11, 24, 25]) {
+      const acks = fake({ errors: [error({ count })], feedback: [] });
+      await runIntake(h.deps, acks.client);
+      expect(acks.acks).toHaveLength(1);
+      const n = await countComments(h);
+      if (n > total) seen.push(count);
+      total = n;
+    }
+    expect(seen).toEqual([2, 5, 10, 25]);
+  });
+
+  it("comments again once 24 hours have passed since the last count comment", async () => {
+    const h = makeTestDeps();
+    await run(h, 1, "2026-10-12T00:00:00.000Z");
+    await run(h, 3, "2026-10-12T00:30:00.000Z"); // 임계 2 통과 -> 코멘트
+    expect(await countComments(h)).toBe(1);
+    await run(h, 4, "2026-10-12T01:00:00.000Z"); // 임계 없음 -> 코멘트 없음
+    expect(await countComments(h)).toBe(1);
+    h.setNow(new Date("2026-10-13T03:30:00.000Z"));
+    await run(h, 4, "2026-10-13T03:00:00.000Z"); // 24시간 이상 지남
+    expect(await countComments(h)).toBe(2);
   });
 });

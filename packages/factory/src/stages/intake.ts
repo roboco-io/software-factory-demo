@@ -62,9 +62,18 @@ export const IntakeResponseSchema = z.object({
 export type IntakeError = z.infer<typeof IntakeResponseSchema>["errors"][number];
 export type IntakeFeedback = z.infer<typeof IntakeResponseSchema>["feedback"][number];
 
+// API의 ack 본문. 에러는 목록에서 읽은 lastSeen을 함께 보내, 읽은 뒤 다시 발생한 에러가 ack되지 않게 한다.
+export const IntakeAckSchema = z.object({
+  errors: z
+    .array(z.object({ fingerprint: z.string().regex(/^[0-9a-f]{16}$/), lastSeen: Timestamp }))
+    .max(50),
+  feedback: z.array(z.number().int().positive()).max(50),
+});
+export type IntakeAck = z.infer<typeof IntakeAckSchema>;
+
 export interface IntakeClient {
   pending(): Promise<unknown>;
-  ack(input: { errors: string[]; feedback: number[] }): Promise<void>;
+  ack(input: IntakeAck): Promise<void>;
 }
 
 const SHAPE_ERROR = "intake 응답 형식이 틀렸다";
@@ -147,8 +156,41 @@ export function renderErrorIssue(
   };
 }
 
-export function renderErrorRepeat(e: IntakeError, settings: Settings): string {
-  return `같은 에러(fingerprint \`${e.fingerprint}\`)가 다시 기록되었다. 누적 ${e.count}회, 마지막 발생 ${cell(e.lastSeen)}.${runLink(settings)}`;
+// 반복 코멘트가 이슈를 뒤덮지 않도록 횟수 임계(1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, ...)를 넘었을 때,
+// 또는 봇의 마지막 횟수 코멘트로부터 24시간이 지났을 때만 코멘트한다.
+const REPEAT_MARKER = "factory:intake-count";
+const RepeatMarkerSchema = z.object({
+  count: z.number().int().nonnegative(),
+  at: z.string().max(40),
+});
+const REPEAT_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+function crossedThreshold(prev: number, next: number): boolean {
+  if ([1, 2, 5].some((t) => t > prev && t <= next)) return true;
+  for (let base = 10; base <= next; base *= 10) {
+    if ([base, base * 2.5, base * 5].some((t) => t > prev && t <= next)) return true;
+  }
+  return false;
+}
+
+export function renderErrorRepeat(e: IntakeError, settings: Settings, now: Date): string {
+  return [
+    `같은 에러(fingerprint \`${e.fingerprint}\`)가 다시 기록되었다. 누적 ${e.count}회, 마지막 발생 ${cell(e.lastSeen)}.${runLink(settings)}`,
+    "",
+    writeMarker(REPEAT_MARKER, { count: e.count, at: now.toISOString() }),
+  ].join("\n");
+}
+
+async function shouldComment(deps: StageDeps, issue: Issue, e: IntakeError): Promise<boolean> {
+  const mine = (await deps.gh.listComments(issue.number)).filter((c) =>
+    isBot(deps.settings, c.author),
+  );
+  let last: z.infer<typeof RepeatMarkerSchema> | null = null;
+  for (const c of mine) last = readMarker(c.body, REPEAT_MARKER, RepeatMarkerSchema) ?? last;
+  if (!last) return true;
+  if (crossedThreshold(last.count, e.count)) return true;
+  const at = Date.parse(last.at);
+  return Number.isNaN(at) || deps.now().getTime() - at >= REPEAT_INTERVAL_MS;
 }
 
 export function renderFeedbackIssue(
@@ -211,7 +253,7 @@ export async function runIntake(deps: StageDeps, client: IntakeClient): Promise<
     acked: { errors: 0, feedback: 0 },
     failed: 0,
   };
-  const ack = { errors: [] as string[], feedback: [] as number[] };
+  const ack: IntakeAck = { errors: [], feedback: [] };
   // 이슈·코멘트가 이미 만들어진 뒤의 기록 실패로 항목을 실패 처리하면 ack가 빠져 중복 이슈가 생긴다. 로그만 남긴다.
   const tryRecord = async (n: number) => {
     try {
@@ -238,9 +280,11 @@ export async function runIntake(deps: StageDeps, client: IntakeClient): Promise<
     try {
       const existing = findIntakeIssue(open, deps.settings, "error", e.fingerprint);
       if (existing) {
-        await deps.gh.comment(existing.number, renderErrorRepeat(e, deps.settings));
-        summary.updated.push(existing.number);
-        await tryRecord(existing.number);
+        if (await shouldComment(deps, existing, e)) {
+          await deps.gh.comment(existing.number, renderErrorRepeat(e, deps.settings, deps.now()));
+          summary.updated.push(existing.number);
+          await tryRecord(existing.number);
+        }
       } else {
         // 같은 fingerprint의 이슈가 닫혀 있으면 코멘트하지 않고 회귀로 새 이슈를 연다.
         const previous = await latestClosed("source:error", "error", e.fingerprint);
@@ -249,7 +293,7 @@ export async function runIntake(deps: StageDeps, client: IntakeClient): Promise<
           "type:bug",
         ]);
       }
-      ack.errors.push(e.fingerprint);
+      ack.errors.push({ fingerprint: e.fingerprint, lastSeen: e.lastSeen });
     } catch (err) {
       summary.failed++;
       deps.log(`intake: error ${e.fingerprint} 처리 실패, ack하지 않는다: ${String(err)}`);
