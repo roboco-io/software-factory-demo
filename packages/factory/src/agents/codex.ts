@@ -15,6 +15,9 @@ export interface CodexLike {
   };
 }
 
+// 턴 수로 세는 항목: 실제 행동(명령 실행, 파일 변경, MCP 호출). 추론·메시지·todo·오류는 제외한다.
+const ACTION_ITEMS = new Set(["command_execution", "file_change", "mcp_tool_call"]);
+
 export function codexThreadOptions(task: AgentTask, model: string): ThreadOptions {
   return {
     model,
@@ -23,6 +26,7 @@ export function codexThreadOptions(task: AgentTask, model: string): ThreadOption
     approvalPolicy: "never",
     skipGitRepoCheck: true,
     networkAccessEnabled: false,
+    webSearchMode: "disabled",
   };
 }
 
@@ -51,7 +55,7 @@ export function createCodexAdapter(opts: {
           ok: true,
           summary: turn.finalResponse,
           model: opts.model,
-          turns: turn.items.length,
+          turns: turn.items.filter((i) => ACTION_ITEMS.has(i.type)).length,
           usage,
         };
         const cost = estimateCostUsd(opts.price, usage);

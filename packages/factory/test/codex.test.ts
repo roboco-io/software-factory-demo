@@ -45,8 +45,10 @@ describe("codexThreadOptions", () => {
       approvalPolicy: "never",
       skipGitRepoCheck: true,
       networkAccessEnabled: false,
+      webSearchMode: "disabled",
     });
     expect(codexThreadOptions(task(false), "m").sandboxMode).toBe("workspace-write");
+    expect(codexThreadOptions(task(false), "m").webSearchMode).toBe("disabled");
   });
 });
 
@@ -63,10 +65,27 @@ describe("createCodexAdapter", () => {
       ok: true,
       summary: '{"verdict":"APPROVE"}',
       model: "gpt-6.1-sol",
-      turns: 2,
+      turns: 1,
       usage: { inputTokens: 500_000, outputTokens: 250_000 },
     });
     expect(seen[0]?.sandboxMode).toBe("read-only");
+  });
+
+  it("counts only command, file change and MCP items as turns", async () => {
+    const mixed: CodexTurn = {
+      ...turn,
+      items: [
+        { type: "reasoning" },
+        { type: "command_execution" },
+        { type: "file_change" },
+        { type: "mcp_tool_call" },
+        { type: "todo_list" },
+        { type: "error" },
+        { type: "agent_message" },
+      ],
+    };
+    const a = createCodexAdapter({ model: "m", env: {}, price: null, codex: fakeCodex(mixed) });
+    expect((await a.run(task(false))).turns).toBe(3);
   });
 
   it("estimates cost only when a price is configured", async () => {
