@@ -76,6 +76,8 @@ Workflows 권한은 주지 않는다. 이 권한이 없으면 App 토큰으로�
 - agent job은 배정된 엔진의 키만 환경변수로 받는다. 그러나 job 정의가 참조하는 세 엔진 시크릿(`ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `DEEPSEEK_API_KEY`)은 마스킹 목록으로 모두 runner에 전달될 수 있다. runner에서 sudo 권한을 가진 에이전트 프로세스가 runner 프로세스 메모리를 읽으면 다른 엔진의 키를 얻을 수 있다.
 - agent job의 runner 프로세스에는 Actions 런타임 토큰(`ACTIONS_RUNTIME_TOKEN`)이 있다. 에이전트 프로세스의 env에는 이 토큰이 없지만, runner를 장악한 에이전트는 이 토큰으로 Actions 캐시(예: pnpm 저장소 캐시)에 오염된 항목을 쓸 수 있다. 이후 신뢰하는 job이 그 캐시를 복원하면 오염된 의존성이 실행될 수 있다. 계획 파일은 prepare job의 artifact ID로만 받으므로 artifact 교체로 계획을 바꿀 수는 없다.
 - `evidence` job은 PR 코드(테스트, 의존성 설치 스크립트)를 실행한다. 이 job에는 시크릿과 GitHub 토큰이 없지만, 판정 프로세스와 같은 VM에서 돌기 때문에 악의적인 PR 코드는 판정 결과를 조작할 수 있다. PR 코드를 실행하는 다른 필수 체크(`unit`, `e2e` 등)와 같은 수준이다. `evidence`는 재현 테스트가 있다는 증거를 요구하는 장치이고, 악의적인 작성자를 막는 장치가 아니다. T2·T3 변경은 계속 사람 승인이 막는다.
-- 피드백 레이트 리밋은 "최근 10분 건수 조회 후 삽입"으로 동작하므로, 같은 IP에서 동시에 들어온 요청은 3건을 조금 넘길 수 있다.
+- 피드백에는 IP별 한도(10분에 3건) 외에 전체 한도(하루 50건)도 있다. 두 한도는 삽입 문장 안에서 함께 검사되므로 동시 요청도 한도를 넘지 못한다. 그러나 IP를 바꿔 가며 보내는 스팸은 IP별 한도를 피할 수 있다. 이 위험은 수용했다. 전체 한도 때문에 피드백 이슈는 하루 최대 50개이고, 이슈마다 triage 실행이 한 번 일어나므로 하루 triage 실행은 약 50회로 제한된다.
+- `evidence` job이 읽는 증거 JSON 보고서는 PR의 테스트 코드가 쓸 수 있으므로 위조할 수 있다. 이 job에는 시크릿이 없고, 위조해도 얻는 것은 `evidence` 체크 통과뿐이다. 이 체크는 악의적인 작성자를 막는 장치가 아니므로 이 위험을 수용했다(판정 T3-c).
+- `INTAKE_TOKEN`은 GitHub `production` environment secret에 두고, 이 environment는 `main` 브랜치만 쓸 수 있도록 배포 브랜치 정책을 건다. main이 아닌 브랜치의 워크플로는 이 토큰을 읽지 못한다.
 - `POST /api/_factory/intake/probe`는 `INTAKE_TOKEN`을 가진 사람만 쓸 수 있는 오류 주입 경로다. 효과는 `error_events` 한 행과 그에 따른 유입 이슈뿐이다.
 - `factory-intake`는 environment `production`을 참조하므로, GitHub가 30분마다 이 environment의 배포 기록을 하나씩 만든다.
