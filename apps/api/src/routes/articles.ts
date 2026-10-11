@@ -62,22 +62,32 @@ export async function loadArticle(d: Db, slug: string) {
   return row ?? undefined;
 }
 
+// D1 allows at most 100 bound parameters per query. The "mine" query binds userId plus the ids.
+export const FAVORITES_CHUNK = 99;
+
+export function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 async function favoritesFor(d: Db, ids: number[], userId: number | null) {
   const counts = new Map<number, number>(ids.map((id) => [id, 0]));
   const mine = new Set<number>();
-  if (ids.length === 0) return { counts, mine };
-  const rows = await d
-    .select({ articleId: favorites.articleId, n: count() })
-    .from(favorites)
-    .where(inArray(favorites.articleId, ids))
-    .groupBy(favorites.articleId);
-  for (const r of rows) counts.set(r.articleId, r.n);
-  if (userId !== null) {
-    const own = await d
-      .select({ articleId: favorites.articleId })
+  for (const part of chunk(ids, FAVORITES_CHUNK)) {
+    const rows = await d
+      .select({ articleId: favorites.articleId, n: count() })
       .from(favorites)
-      .where(and(eq(favorites.userId, userId), inArray(favorites.articleId, ids)));
-    for (const r of own) mine.add(r.articleId);
+      .where(inArray(favorites.articleId, part))
+      .groupBy(favorites.articleId);
+    for (const r of rows) counts.set(r.articleId, r.n);
+    if (userId !== null) {
+      const own = await d
+        .select({ articleId: favorites.articleId })
+        .from(favorites)
+        .where(and(eq(favorites.userId, userId), inArray(favorites.articleId, part)));
+      for (const r of own) mine.add(r.articleId);
+    }
   }
   return { counts, mine };
 }
