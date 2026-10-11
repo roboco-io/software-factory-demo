@@ -20,6 +20,7 @@ import type { StageDeps } from "./stages/deps";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
 import { reviewStage } from "./stages/review";
 import { createIntakeClient, runIntake } from "./stages/intake";
+import { normalizeSmokeResult, runSmokeReport } from "./stages/smoke";
 import { runRisk } from "./stages/risk";
 import { triageStage } from "./stages/triage";
 
@@ -235,6 +236,13 @@ export const COMMANDS: Record<string, Handler> = {
     );
     ctx.stdout(JSON.stringify(summary));
     return summary.failed > 0 ? 1 : 0;
+  },
+  // --result는 checks job 결과다. success 외의 값(failure·cancelled·skipped·timed_out)은 모두 실패로 본다.
+  "smoke-report": async (ctx, v) => {
+    const result = normalizeSmokeResult(reqStr(v, "result"));
+    if (result === null) throw new UsageError("--result <checks job 결과>가 필요하다");
+    ctx.stdout(JSON.stringify(await runSmokeReport(ctx.buildDeps(ctx.env, "all"), { result })));
+    return 0;
   },
 };
 

@@ -20,6 +20,8 @@ claude.local.md @serithemage
 /scripts/ @serithemage
 /tests/realworld/vendor/ @serithemage
 /tests/realworld/UPSTREAM.txt @serithemage
+/tests/smoke/ @serithemage
+/apps/web/e2e-smoke/ @serithemage
 
 # T2: 인증·마이그레이션·의존성·배포 설정
 /apps/api/src/auth/ @serithemage

@@ -26,6 +26,9 @@ rules:
       - "scripts/**"
       - "tests/realworld/vendor/**"
       - "tests/realworld/UPSTREAM.txt"
+      # 프로덕션 스모크의 검사 기준은 구현 에이전트가 약하게 만들 수 없어야 한다.
+      - "tests/smoke/**"
+      - "apps/web/e2e-smoke/**"
   - tier: T2
     patterns:
       - "apps/api/src/auth/**"

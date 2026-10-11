@@ -20,6 +20,19 @@ function context(
 }
 
 describe("cli main", () => {
+  it("smoke-report maps non-success results to failure and requires a result", async () => {
+    const h = makeTestDeps();
+    const out: string[] = [];
+    expect(await main(["smoke-report"], context(h, [], out))).toBe(2);
+    expect(await main(["smoke-report", "--result", ""], context(h, [], out))).toBe(2);
+    expect(await main(["smoke-report", "--result", "cancelled"], context(h, [], out))).toBe(0);
+    expect(JSON.parse(out.at(-1)!)).toEqual({ action: "created", issue: 1 });
+    expect(await main(["smoke-report", "--result", "skipped"], context(h, [], out))).toBe(0);
+    expect(JSON.parse(out.at(-1)!)).toEqual({ action: "commented", issue: 1 });
+    expect(await main(["smoke-report", "--result", "success"], context(h, [], out))).toBe(0);
+    expect(JSON.parse(out.at(-1)!)).toEqual({ action: "recovered", issue: 1 });
+  });
+
   it("intake requires INTAKE_URL and INTAKE_TOKEN and calls nothing without them", async () => {
     const h = makeTestDeps();
     const phases: Phase[] = [];
