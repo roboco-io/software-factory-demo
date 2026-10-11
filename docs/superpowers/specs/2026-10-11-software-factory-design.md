@@ -69,7 +69,7 @@ roboco.io 블로그의 연재 「오픈소스 프로젝트들로부터 배우는
 | pi agent | `@earendil-works/pi-coding-agent`(구 `@mariozechner/pi-coding-agent`는 deprecated), 헤드리스 `-p`, `--mode json`, `--model provider/id`, `--tools`, `--no-session`, DeepSeek 키 `DEEPSEEK_API_KEY` | 확인 |
 | pi의 DeepSeek provider ID | 내장 provider ID는 문서에서 찾지 못했다. 대안은 `models.json`에 OpenAI 호환 provider(`baseUrl: https://api.deepseek.com`) 정의 | 미확인 |
 | DeepSeek V4.1 Flash | API 모델 ID `deepseek-flash`, OpenAI 호환 base URL `https://api.deepseek.com` | 확인 |
-| Workers + D1 | `wrangler d1 create/delete -y`, `d1 migrations apply --remote`, `wrangler deploy --name`, `wrangler delete --name` | 확인 |
+| Workers + D1 | `wrangler d1 create/delete -y`, `d1 migrations apply --remote`, `wrangler deploy --name`. Worker 삭제는 Cloudflare API `DELETE` 호출 | 확인 |
 | PR별 D1 격리 | Version preview URL은 같은 바인딩을 공유하므로, PR별 Worker 이름 + PR별 D1로 격리해야 한다 | 추정(P1에서 검증) |
 | Pages PR 프리뷰 | `rossjrw/pr-preview-action@v1`, Pages 소스가 "Deploy from a branch"(`gh-pages`)여야 함, fork PR 미지원 | 확인 |
 | RealWorld 스펙 | `realworld-apps/realworld`의 `specs/api/openapi.yml`, 공식 Hurl 테스트 스위트(`run-api-tests-hurl.sh`, `HOST` 환경변수) | 확인 |
@@ -275,12 +275,12 @@ interface AgentAdapter {
 
 ### 6.1 API (`apps/api`)
 
-- Hono, Cloudflare Workers, D1, Drizzle ORM + drizzle-kit 마이그레이션.
+- Hono, Cloudflare Workers, D1, Drizzle ORM(쿼리 빌더로만 사용). 마이그레이션은 `apps/api/migrations/NNNN_name.sql`에 손으로 쓴 SQL이며 drizzle-kit은 쓰지 않는다.
 - 인증: JWT(HS256, Web Crypto), 비밀번호 PBKDF2-SHA256(Web Crypto, 반복 100,000회(Workers Web Crypto의 PBKDF2 상한)). 시크릿 `JWT_SECRET`.
 - RealWorld 스펙(`specs/api/openapi.yml`)의 응답 형식·오류 형식(`{"errors": {...}}`)을 따른다.
 - P1 구현 범위: 사용자 등록·로그인·현재 사용자 조회·수정, 프로필 조회, 글 CRUD·목록(작성자 필터·페이지네이션), 댓글 CRUD.
 - 팩토리 데모용으로 남기는 범위: 프로필 팔로우/언팔로우, 글 즐겨찾기/해제, 태그 목록(`GET /api/tags`), 피드(`/articles/feed`). 글의 태그 저장과 `?tag=` 필터는 RealWorld `articles.hurl`이 검사하므로 P1에서 구현한다. 남긴 라우트는 인증(401) → 대상 확인(404) → 501 순서로 응답한다.
-- CORS: 프로덕션 웹 오리진과 프리뷰 오리진만 허용(`ALLOWED_ORIGINS` 변수).
+- CORS: 프로덕션 웹 오리진과 프리뷰 오리진(`https://roboco.io`, `https://roboco-io.github.io`)에 더해 로컬 개발 오리진(`http://localhost:5173`, `http://localhost:4173`)도 `ALLOWED_ORIGINS` 변수에 포함한다. 토큰은 쿠키가 아니라 `Authorization` 헤더로 전달하므로 CORS 허용 목록이 인증 경계를 대신하지 않는다.
 
 ### 6.2 웹 (`apps/web`)
 
@@ -295,7 +295,7 @@ interface AgentAdapter {
 |---|---|---|
 | API | `wrangler d1 migrations apply sfd-prod --remote` → `wrangler deploy` (Worker `sfd-api`) | `wrangler d1 create sfd-pr-N` → 마이그레이션 → `wrangler deploy --name sfd-api-pr-N`(D1 ID를 주입한 임시 설정 사용) |
 | 웹 | `gh-pages` 브랜치 루트에 빌드 결과 배포 | `rossjrw/pr-preview-action`으로 `gh-pages`의 `pr-preview/pr-N/`에 배포 |
-| 정리 | — | PR 종료 시 `wrangler delete --name sfd-api-pr-N`, `wrangler d1 delete sfd-pr-N -y`, 프리뷰 디렉토리 제거 |
+| 정리 | — | PR 종료 시 Cloudflare API `DELETE /accounts/{id}/workers/scripts/sfd-api-pr-N?force=true`(Worker 삭제), `wrangler d1 delete sfd-pr-N -y`, 프리뷰 디렉토리 제거 |
 | 알림 | 배포 후 스모크 통과 시 이슈에 `factory:deployed` | 프리뷰 URL 2개를 PR 코멘트로 갱신 |
 
 - 확인된 URL(2026-10-11): 프론트 `https://roboco.io/software-factory-demo/`, API `https://sfd-api.roboco.workers.dev/api`.
@@ -309,7 +309,7 @@ interface AgentAdapter {
 |---|---|---|
 | `typecheck` | `tsc --noEmit` 전체 워크스페이스 | P1 |
 | `lint` | ESLint + Prettier check | P1 |
-| `unit` | Vitest. API는 `@cloudflare/vitest-pool-workers`, factory는 일반 Node | P1 |
+| `unit` | Vitest. API는 `@cloudflare/vitest-plugin`, factory는 일반 Node | P1 |
 | `realworld-api` | 로컬 `wrangler dev`(로컬 D1)에 RealWorld 공식 Hurl 스위트 실행. 미구현 기능 테스트는 `tests/realworld/skip.txt`로 제외. 팩토리가 기능을 구현하면 skip 항목을 지우는 것이 수용 기준의 일부가 된다. skip 대상: favorites, feed, profiles, tags | P1 |
 | `e2e` | Playwright 스모크(가입→글 작성→댓글)를 로컬 서버(wrangler dev + vite preview)에 실행. PR 프리뷰 대상 실행은 `e2e-preview`(필수 아님) | P1 |
 | `risk-tier` | 변경 경로로 등급 판정, `risk:T0-3` 라벨 부착, 구현 역할의 T3 수정 차단 | P2 |
@@ -341,7 +341,7 @@ RealWorld Hurl 스위트는 업스트림 리포의 특정 커밋을 고정(pin)�
 |---|---|---|
 | 정책 엔진(경로→등급), 상태 전이, 엔진 배정, 가드레일 계산, 보고서 렌더링 | Vitest 단위 테스트 | 모든 PR |
 | 단계 스크립트 전체 흐름 | `FakeAdapter` + GitHub API 목(mock)으로 triage→implement→review→merge 시나리오 | 모든 PR |
-| API | vitest-pool-workers 단위 테스트 + RealWorld Hurl 스위트 | 모든 PR |
+| API | `@cloudflare/vitest-plugin` 단위 테스트 + RealWorld Hurl 스위트 | 모든 PR |
 | 웹 | Playwright 스모크(프리뷰) | 모든 PR |
 | 어댑터 계약 | 엔진별 아주 작은 과제(파일 하나 생성, 읽기 전용 위반 시 실패 확인) | 수동·주 1회 |
 | 팩토리 리허설 | `factory-selftest.yml`: 실제 엔진으로 샌드박스 이슈 1건을 끝까지 처리 | 수동(데모 전) |
