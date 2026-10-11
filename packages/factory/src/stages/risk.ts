@@ -1,0 +1,72 @@
+import { TooManyFilesError, type ChangedFile } from "../github/port";
+import { classifyFiles, normalizePath, type FileTier, type Tier } from "../policy/risk";
+import { parsePrMeta } from "../report/pr";
+import type { StageDeps } from "./deps";
+import { flattenFiles } from "./gate";
+
+export interface RiskReport {
+  pr: number;
+  tier: Tier;
+  files: FileTier[];
+  botAuthor: boolean;
+  role: "implement" | "improve" | null;
+  forbidden: string[];
+  previewAllowed: boolean;
+}
+
+const SKIP_FILE = "tests/realworld/skip.txt";
+
+// F21: 봇 implement PR이 skip.txt에 줄을 더하면 RealWorld 실패를 숨길 수 있다. 줄 삭제는 허용한다.
+// 이름 변경으로 skip.txt를 만드는 경우도 내용을 알 수 없으므로 금지한다.
+function addsSkipEntries(files: ChangedFile[]): boolean {
+  return files.some(
+    (f) =>
+      normalizePath(f.filename) === SKIP_FILE &&
+      (f.additions.some((l) => l.trim() !== "") ||
+        (f.previousFilename !== undefined && normalizePath(f.previousFilename) !== SKIP_FILE)),
+  );
+}
+
+export async function runRisk(
+  deps: StageDeps,
+  args: { pr: number; check: boolean },
+): Promise<RiskReport> {
+  const pull = await deps.gh.getPull(args.pr);
+  let changed: ChangedFile[] | null = null;
+  try {
+    changed = await deps.gh.listPullFiles(args.pr);
+  } catch (e) {
+    if (!(e instanceof TooManyFilesError)) throw e;
+  }
+  // 목록을 얻지 못하면(파일이 너무 많음) 등급을 알 수 없으므로 T3로 본다.
+  const risk: { tier: Tier; files: FileTier[] } = changed
+    ? classifyFiles(flattenFiles(changed), deps.policy)
+    : { tier: "T3", files: [] };
+  const botAuthor = pull.author === deps.settings.botLogin;
+  // 봇 PR의 역할은 PR 본문 표식으로 읽는다. 표식이 없으면 가장 엄격한 implement로 본다.
+  const role = botAuthor ? (parsePrMeta(pull.body)?.role ?? "implement") : null;
+  const forbidden: string[] = [];
+  if (role === "implement") {
+    if (!changed) forbidden.push("(변경 파일이 너무 많아 등급을 판정할 수 없다)");
+    else {
+      forbidden.push(...risk.files.filter((f) => f.tier === "T3").map((f) => f.file));
+      if (addsSkipEntries(changed)) forbidden.push(SKIP_FILE);
+    }
+  }
+  const previewAllowed = !(botAuthor && (risk.tier === "T2" || risk.tier === "T3"));
+  if (args.check) {
+    const wanted = `risk:${risk.tier}`;
+    for (const l of pull.labels)
+      if (/^risk:T[0-3]$/.test(l) && l !== wanted) await deps.gh.removeLabel(args.pr, l);
+    if (!pull.labels.includes(wanted)) await deps.gh.addLabels(args.pr, [wanted]);
+  }
+  return {
+    pr: args.pr,
+    tier: risk.tier,
+    files: risk.files,
+    botAuthor,
+    role,
+    forbidden,
+    previewAllowed,
+  };
+}

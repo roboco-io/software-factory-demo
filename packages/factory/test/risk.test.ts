@@ -29,6 +29,11 @@ describe("tierOf with factory/risk-policy.yml", () => {
     ["apps/web/package.json", "T2"],
     ["pnpm-lock.yaml", "T2"],
     ["apps/api/wrangler.json", "T2"],
+    ["apps/api/wrangler.toml", "T2"],
+    ["apps/web/wrangler.jsonc", "T2"],
+    ["apps/api/.dev.vars", "T2"],
+    [".dev.vars", "T2"],
+    ["apps/api/src/routes/users.ts", "T2"],
     ["eslint.config.js", "T2"],
     ["apps/api/AGENTS.md", "T3"],
     ["apps/web/src/CLAUDE.md", "T3"],
@@ -101,6 +106,15 @@ describe("ChangedFile additions (F21)", () => {
     const patch = "@@ -1,2 +1,3 @@\n keep\n-old\n+new\n+tags:favorite\n";
     expect(addedLinesFromPatch(patch)).toEqual(["new", "tags:favorite"]);
     expect(addedLinesFromPatch(undefined)).toEqual([]);
+  });
+
+  it("keeps an added line whose content starts with ++ (F22)", () => {
+    expect(addedLinesFromPatch("@@ -1 +1,2 @@\n keep\n+++x\n+++ b/y\n+ok\n")).toEqual([
+      "++x",
+      "++ b/y",
+      "ok",
+    ]);
+    expect(addedLinesFromPatch("--- a/f\n+++ b/f\n@@ -1 +1 @@\n+z\n")).toEqual(["z"]);
   });
 
   it("carries additions on a changed file", () => {

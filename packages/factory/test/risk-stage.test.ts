@@ -1,0 +1,87 @@
+import { describe, expect, it, vi } from "vitest";
+import { TooManyFilesError } from "../src/github/port";
+import { runRisk } from "../src/stages/risk";
+import { makeTestDeps, openBotPr } from "./helpers";
+
+describe("runRisk", () => {
+  it("counts the old path of a rename, so moving a T3 file out is still T3 and forbidden", async () => {
+    const h = makeTestDeps();
+    const { pr, branch } = await openBotPr(h);
+    h.gh.setBranch(branch, "sha-a", [
+      {
+        filename: "apps/api/src/x.ts",
+        previousFilename: "packages/factory/src/x.ts",
+        additions: [],
+      },
+    ]);
+    const r = await runRisk(h.deps, { pr, check: false });
+    expect(r.tier).toBe("T3");
+    expect(r.forbidden).toEqual(["packages/factory/src/x.ts"]);
+  });
+
+  it("allows T3 changes in human PRs and improve-role bot PRs, which CODEOWNERS then gates", async () => {
+    const h = makeTestDeps();
+    h.gh.setBranch("human/x", "s", [".github/workflows/ci.yml"]);
+    const human = await h.gh.createPull({
+      title: "h",
+      body: "",
+      head: "human/x",
+      base: "main",
+      draft: false,
+    });
+    h.gh.pulls.get(human)!.author = "serithemage";
+    expect(await runRisk(h.deps, { pr: human, check: false })).toMatchObject({
+      tier: "T3",
+      botAuthor: false,
+      forbidden: [],
+      previewAllowed: true,
+    });
+    const improve = await openBotPr(h, { role: "improve" }, ["AGENTS.md"]);
+    expect((await runRisk(h.deps, { pr: improve.pr, check: false })).forbidden).toEqual([]);
+  });
+
+  it("disallows previews only for bot PRs at T2 or above", async () => {
+    const h = makeTestDeps();
+    const t2 = await openBotPr(h, {}, ["apps/api/migrations/0002_x.sql"]);
+    const t1 = await openBotPr(h, {}, ["apps/api/src/routes/tags.ts"]);
+    expect((await runRisk(h.deps, { pr: t2.pr, check: false })).previewAllowed).toBe(false);
+    expect((await runRisk(h.deps, { pr: t1.pr, check: false })).previewAllowed).toBe(true);
+  });
+
+  it("replaces stale risk labels when checking", async () => {
+    const h = makeTestDeps();
+    const { pr } = await openBotPr(h);
+    await h.gh.addLabels(pr, ["risk:T0", "factory:round-1"]);
+    await runRisk(h.deps, { pr, check: true });
+    expect((await h.gh.getPull(pr)).labels).toEqual(["factory:round-1", "risk:T1"]);
+  });
+
+  it("forbids lines added to skip.txt in a bot implement PR but allows deleting lines (F21)", async () => {
+    const h = makeTestDeps();
+    const add = await openBotPr(h, {}, [
+      { filename: "tests/realworld/skip.txt", additions: ["tags.hurl"] },
+    ]);
+    const del = await openBotPr(h, {}, [{ filename: "tests/realworld/skip.txt", additions: [] }]);
+    const moved = await openBotPr(h, {}, [
+      { filename: "tests/realworld/skip.txt", previousFilename: "tests/other.txt", additions: [] },
+    ]);
+    expect((await runRisk(h.deps, { pr: add.pr, check: false })).forbidden).toEqual([
+      "tests/realworld/skip.txt",
+    ]);
+    const d = await runRisk(h.deps, { pr: del.pr, check: false });
+    expect(d).toMatchObject({ tier: "T1", forbidden: [] });
+    expect((await runRisk(h.deps, { pr: moved.pr, check: false })).forbidden).toEqual([
+      "tests/realworld/skip.txt",
+    ]);
+  });
+
+  it("treats a PR with too many files as T3 and forbidden for bot implement PRs", async () => {
+    const h = makeTestDeps();
+    const { pr } = await openBotPr(h);
+    vi.spyOn(h.gh, "listPullFiles").mockRejectedValue(new TooManyFilesError("3000"));
+    const r = await runRisk(h.deps, { pr, check: true });
+    expect(r.tier).toBe("T3");
+    expect(r.forbidden).toHaveLength(1);
+    expect((await h.gh.getPull(pr)).labels).toContain("risk:T3");
+  });
+});

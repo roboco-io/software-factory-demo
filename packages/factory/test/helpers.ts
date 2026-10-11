@@ -7,7 +7,7 @@ import type { SpawnFn } from "../src/exec/process";
 import type { GitPort } from "../src/git/port";
 import { InMemoryGitHub } from "../src/github/memory";
 import { renderPrBody, type PrMeta } from "../src/report/pr";
-import { loadRiskPolicy } from "../src/policy/risk";
+import { loadRiskPolicy, type ChangedFile } from "../src/policy/risk";
 import { createRunStore } from "../src/runs/store";
 import { DEFAULT_BOT_LOGIN, type Settings, type StageDeps } from "../src/stages/deps";
 
@@ -199,7 +199,7 @@ export function makeTestDeps(
 export async function openBotPr(
   h: TestHarness,
   meta: Partial<PrMeta> = {},
-  files = ["apps/api/src/routes/tags.ts"],
+  files: (string | ChangedFile)[] = ["apps/api/src/routes/tags.ts"],
 ) {
   const issue = h.gh.addIssue({ title: "태그 목록 API", labels: ["factory:in-review"] });
   const branch = `factory/issue-${issue.number}`;

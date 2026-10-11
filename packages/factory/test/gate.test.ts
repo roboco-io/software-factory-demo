@@ -1,0 +1,207 @@
+import { describe, expect, it, vi } from "vitest";
+import { TooManyFilesError } from "../src/github/port";
+import { renderReviewBody } from "../src/report/comments";
+import { checkState, runGate, runOnClosed } from "../src/stages/gate";
+import { makeTestDeps, openBotPr, type TestHarness } from "./helpers";
+
+export const GREEN = {
+  typecheck: "success",
+  lint: "success",
+  unit: "success",
+  "realworld-api": "success",
+  e2e: "success",
+  "risk-tier": "success",
+};
+
+export async function verdict(
+  h: TestHarness,
+  pr: number,
+  sha: string,
+  v: "APPROVE" | "REQUEST_CHANGES",
+) {
+  await h.gh.createReview(pr, {
+    event: "COMMENT",
+    body: renderReviewBody(
+      { verdict: v, summary: "s", findings: [] },
+      { sha, engine: "codex", model: "gpt-6.1-sol" },
+    ),
+    commitId: sha,
+  });
+}
+
+describe("checkState", () => {
+  it.each([
+    [undefined, "pending"],
+    [{ name: "e2e", status: "in_progress", conclusion: null }, "pending"],
+    [{ name: "e2e", status: "completed", conclusion: "cancelled" }, "pending"],
+    [{ name: "e2e", status: "completed", conclusion: "skipped" }, "pass"],
+    [{ name: "e2e", status: "completed", conclusion: "success" }, "pass"],
+    [{ name: "e2e", status: "completed", conclusion: "timed_out" }, "fail"],
+    [{ name: "e2e", status: "completed", conclusion: "failure" }, "fail"],
+  ] as const)("%j → %s", (run, expected) => {
+    expect(checkState(run)).toBe(expected);
+  });
+});
+
+describe("runGate", () => {
+  it("squash-merges a green T1 PR approved at the current head, with trailers", async () => {
+    const h = makeTestDeps();
+    const { pr, issue } = await openBotPr(h);
+    h.gh.setChecks("sha-a", GREEN);
+    await verdict(h, pr, "sha-a", "APPROVE");
+    expect(await runGate(h.deps, { pr })).toBe("merged");
+    expect(h.gh.merges[0]).toMatchObject({ pr, sha: "sha-a", title: `feat: 태그 (#${pr})` });
+    expect(h.gh.merges[0]?.message).toContain(
+      `Agent-Signature: claude/claude-sonnet-5-5\nFactory-Issue: #${issue}`,
+    );
+    expect((await h.deps.runs.since(new Date(0)))[0]).toMatchObject({ role: "gate", ok: true, pr });
+  });
+
+  it("finds the PR by branch for workflow_run events", async () => {
+    const h = makeTestDeps();
+    const { pr, branch } = await openBotPr(h);
+    h.gh.setChecks("sha-a", GREEN);
+    await verdict(h, pr, "sha-a", "APPROVE");
+    expect(await runGate(h.deps, { branch })).toBe("merged");
+  });
+
+  it("waits without a verdict, with a verdict for an older sha, or with checks still pending", async () => {
+    const h = makeTestDeps();
+    const { pr } = await openBotPr(h);
+    h.gh.setChecks("sha-a", GREEN);
+    expect(await runGate(h.deps, { pr })).toBe("pending");
+    await verdict(h, pr, "old-sha", "APPROVE");
+    expect(await runGate(h.deps, { pr })).toBe("pending");
+    await verdict(h, pr, "sha-a", "APPROVE");
+    h.gh.setChecks("sha-a", { ...GREEN, e2e: "cancelled" });
+    expect(await runGate(h.deps, { pr })).toBe("pending");
+    const { "risk-tier": _omit, ...withoutRisk } = GREEN;
+    void _omit;
+    h.gh.setChecks("sha-a", withoutRisk);
+    expect(await runGate(h.deps, { pr })).toBe("pending");
+    expect(h.gh.merges).toEqual([]);
+    expect(h.gh.dispatches).toEqual([]);
+  });
+
+  it("dispatches a CI fix for a failing check unless review already requested changes", async () => {
+    const h = makeTestDeps();
+    const { pr, issue } = await openBotPr(h);
+    h.gh.setChecks("sha-a", { ...GREEN, unit: "failure" });
+    expect(await runGate(h.deps, { pr })).toBe("fix-dispatched");
+    expect(h.gh.dispatches).toEqual([
+      {
+        file: "factory-fix.yml",
+        inputs: { pr: String(pr), sha: "sha-a", reason: "ci", issue: String(issue) },
+      },
+    ]);
+    await verdict(h, pr, "sha-a", "REQUEST_CHANGES");
+    expect(await runGate(h.deps, { pr })).toBe("pending");
+    expect(h.gh.dispatches).toHaveLength(1);
+  });
+
+  it("sends a failing risk-tier check to a human", async () => {
+    const h = makeTestDeps();
+    const { pr, issue } = await openBotPr(h);
+    h.gh.setChecks("sha-a", { ...GREEN, "risk-tier": "failure" });
+    expect(await runGate(h.deps, { pr })).toBe("needs-human");
+    expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:needs-human"]);
+  });
+
+  it("never merges a T2 PR and asks for CODEOWNERS approval once", async () => {
+    const h = makeTestDeps();
+    const { pr, issue } = await openBotPr(h, {}, [
+      "apps/api/migrations/0002_favorites.sql",
+      "apps/api/src/routes/favorites.ts",
+    ]);
+    h.gh.setChecks("sha-a", GREEN);
+    await verdict(h, pr, "sha-a", "APPROVE");
+    expect(await runGate(h.deps, { pr })).toBe("needs-human");
+    expect(await runGate(h.deps, { pr })).toBe("ignored");
+    expect(h.gh.merges).toEqual([]);
+    const comments = await h.gh.listComments(issue);
+    expect(comments).toHaveLength(1);
+    expect(comments[0]?.body).toContain("CODEOWNERS");
+    expect(comments[0]?.body).toContain("apps/api/migrations/0002_favorites.sql");
+  });
+
+  it("treats a rename out of a T3 path as T3 and never merges it", async () => {
+    const h = makeTestDeps();
+    const { pr, branch, issue } = await openBotPr(h);
+    h.gh.setBranch(branch, "sha-a", [
+      {
+        filename: "apps/api/src/x.ts",
+        previousFilename: "packages/factory/src/x.ts",
+        additions: [],
+      },
+    ]);
+    h.gh.setChecks("sha-a", GREEN);
+    await verdict(h, pr, "sha-a", "APPROVE");
+    expect(await runGate(h.deps, { pr })).toBe("needs-human");
+    expect(h.gh.merges).toEqual([]);
+    expect((await h.gh.listComments(issue))[0]?.body).toContain("packages/factory/src/x.ts");
+  });
+
+  it("sends a PR with too many files to a human instead of merging", async () => {
+    const h = makeTestDeps();
+    const { pr, issue } = await openBotPr(h);
+    h.gh.setChecks("sha-a", GREEN);
+    await verdict(h, pr, "sha-a", "APPROVE");
+    vi.spyOn(h.gh, "listPullFiles").mockRejectedValue(new TooManyFilesError("3000"));
+    expect(await runGate(h.deps, { pr })).toBe("needs-human");
+    expect(h.gh.merges).toEqual([]);
+    expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:needs-human"]);
+  });
+
+  it("does not merge when the head moved after the verdict (verdict bound to sha)", async () => {
+    const h = makeTestDeps();
+    const { pr, branch } = await openBotPr(h);
+    await verdict(h, pr, "sha-a", "APPROVE");
+    h.gh.setBranch(branch, "sha-b", ["apps/api/src/routes/tags.ts"]);
+    h.gh.setChecks("sha-b", GREEN);
+    expect(await runGate(h.deps, { pr })).toBe("pending");
+    expect(h.gh.merges).toEqual([]);
+  });
+
+  it("merges a green docs-only T0 PR without a verdict, but not over REQUEST_CHANGES", async () => {
+    const h = makeTestDeps();
+    const a = await openBotPr(h, {}, ["docs/guide.md"]);
+    h.gh.setChecks("sha-a", GREEN);
+    expect(await runGate(h.deps, { pr: a.pr })).toBe("merged");
+    const h2 = makeTestDeps();
+    const b = await openBotPr(h2, {}, ["docs/guide.md"]);
+    h2.gh.setChecks("sha-a", GREEN);
+    await verdict(h2, b.pr, "sha-a", "REQUEST_CHANGES");
+    expect(await runGate(h2.deps, { pr: b.pr })).toBe("pending");
+  });
+
+  it("asks a human when GitHub refuses the merge", async () => {
+    const h = makeTestDeps();
+    const { pr, issue } = await openBotPr(h);
+    h.gh.setChecks("sha-a", GREEN);
+    await verdict(h, pr, "sha-a", "APPROVE");
+    h.gh.mergeResult = false;
+    expect(await runGate(h.deps, { pr })).toBe("merge-failed");
+    expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:needs-human"]);
+  });
+
+  it("ignores PRs whose issue is not in review", async () => {
+    const h = makeTestDeps();
+    const { pr, issue } = await openBotPr(h);
+    await h.gh.removeLabel(issue, "factory:in-review");
+    await h.gh.addLabels(issue, ["factory:in-progress"]);
+    h.gh.setChecks("sha-a", { ...GREEN, unit: "failure" });
+    expect(await runGate(h.deps, { pr })).toBe("ignored");
+    expect(h.gh.dispatches).toEqual([]);
+  });
+});
+
+describe("runOnClosed", () => {
+  it("moves the issue to merged only for a merged bot PR", async () => {
+    const h = makeTestDeps();
+    const { pr, issue } = await openBotPr(h);
+    expect(await runOnClosed(h.deps, { pr })).toBe(false);
+    h.gh.humanMerge(pr, "m");
+    expect(await runOnClosed(h.deps, { pr })).toBe(true);
+    expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:merged"]);
+  });
+});

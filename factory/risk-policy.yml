@@ -31,8 +31,9 @@ rules:
       - "**/package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
-      - "apps/api/wrangler.json"
-      - "apps/api/wrangler.toml"
+      - "apps/api/src/routes/users.ts" # 로그인·회원가입
+      - "apps/*/wrangler.*"
+      - "**/.dev.vars"
   - tier: T0
     patterns:
       - "docs/**"

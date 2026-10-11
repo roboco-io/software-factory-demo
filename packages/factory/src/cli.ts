@@ -2,11 +2,14 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { buildDeps } from "./main";
 import { runCommand } from "./stages/command";
+import { runDeployFailed, runDeployed } from "./stages/deploy";
 import { fixStage } from "./stages/fix";
+import { runGate, runOnClosed } from "./stages/gate";
 import { implementStage } from "./stages/implement";
 import type { StageDeps } from "./stages/deps";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
 import { reviewStage } from "./stages/review";
+import { runRisk } from "./stages/risk";
 import { triageStage } from "./stages/triage";
 
 export interface CliContext {
@@ -111,6 +114,49 @@ export const COMMANDS: Record<string, Handler> = {
       implementStage,
       sender ? { issue: num(v, "issue"), sender } : { issue: num(v, "issue") },
     );
+  },
+  gate: async (ctx, v) => {
+    const pr = optNum(v, "pr");
+    const branch = str(v, "branch");
+    if (pr === undefined && !branch) throw new UsageError("--pr 또는 --branch가 필요하다");
+    ctx.stdout(
+      await runGate(ctx.buildDeps(ctx.env, "all"), pr !== undefined ? { pr } : { branch: branch! }),
+    );
+    return 0;
+  },
+  "on-closed": async (ctx, v) => {
+    ctx.stdout(String(await runOnClosed(ctx.buildDeps(ctx.env, "all"), { pr: num(v, "pr") })));
+    return 0;
+  },
+  risk: async (ctx, v) => {
+    const report = await runRisk(ctx.buildDeps(ctx.env, "all"), {
+      pr: num(v, "pr"),
+      check: v.check === true,
+    });
+    ctx.stdout(
+      v.json === true
+        ? JSON.stringify(report)
+        : `risk ${report.tier}: ${report.files.map((f) => `${f.file}=${f.tier}`).join(", ")}`,
+    );
+    if (v.check === true && report.forbidden.length > 0) {
+      ctx.stdout(`구현 역할 PR이 T3 경로를 바꿨다: ${report.forbidden.join(", ")}`);
+      return 1;
+    }
+    return 0;
+  },
+  deployed: async (ctx, v) => {
+    ctx.stdout(
+      JSON.stringify(await runDeployed(ctx.buildDeps(ctx.env, "all"), { sha: reqStr(v, "sha") })),
+    );
+    return 0;
+  },
+  "deploy-failed": async (ctx, v) => {
+    ctx.stdout(
+      JSON.stringify(
+        await runDeployFailed(ctx.buildDeps(ctx.env, "all"), { sha: reqStr(v, "sha") }),
+      ),
+    );
+    return 0;
   },
 };
 

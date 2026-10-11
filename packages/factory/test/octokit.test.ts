@@ -215,7 +215,7 @@ describe("createOctokitPort pagination and caps", () => {
     const gh = mk({
       "/repos/o/r/pulls/9?page=1": { body: { changed_files: 2 } },
       "/repos/o/r/pulls/9/files?page=1": {
-        body: [{ filename: "a.ts", patch: "+x" }],
+        body: [{ filename: "a.ts", patch: "@@ -0,0 +1 @@\n+x" }],
         headers: link("/repos/o/r/pulls/9/files", 2),
       },
       "/repos/o/r/pulls/9/files?page=2": { body: [{ filename: "b.ts" }] },
