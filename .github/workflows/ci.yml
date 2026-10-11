@@ -46,3 +46,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: gacts/install-hurl@v1
       - run: scripts/realworld-api.sh
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web exec playwright install --with-deps chromium
+      - run: pnpm --filter web e2e
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with: { name: playwright-traces, path: apps/web/test-results, retention-days: 7 }
