@@ -29,6 +29,15 @@ describe("POST /users", () => {
     expect(user.token.length).toBeGreaterThan(10);
   });
 
+  it("rejects a 7 char password with 422 too short", async () => {
+    const res = await api("/users", {
+      method: "POST",
+      body: { user: { username: "shortpw", email: "shortpw@test.com", password: "short7c" } },
+    });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as ErrBody).errors["password"]).toBeDefined();
+  });
+
   it.each(["username", "email", "password"])("rejects blank %s with 422", async (field) => {
     const user: Record<string, string> = {
       username: "b1",

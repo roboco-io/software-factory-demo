@@ -80,6 +80,7 @@ articlesRouter.get("/articles", optionalAuth, async (c) => {
   const q = c.req.query();
   const limit = intParam(q.limit, 20, 1, 100);
   const offset = intParam(q.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+  // 팩토리 데모용으로 남긴 기능: 즐겨찾기(팔로우) 구현 시 함께 바꾼다 (routes/deferred.ts 참고)
   if (q.favorited !== undefined) return c.json({ articles: [], articlesCount: 0 });
 
   const conds: SQL[] = [];

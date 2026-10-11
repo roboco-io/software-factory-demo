@@ -22,7 +22,7 @@ export function Header() {
             <>
               {item("/editor", "New Article")}
               {item("/settings", "Settings")}
-              {item(`/profile/${user.username}`, user.username)}
+              {item(`/profile/${encodeURIComponent(user.username)}`, user.username)}
             </>
           ) : (
             <>

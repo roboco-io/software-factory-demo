@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { API_BASE } from "../api/client";
 import { AuthProvider } from "../auth/AuthContext";
 import { Auth } from "./Auth";
 
@@ -53,6 +54,6 @@ describe("Auth page", () => {
     fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "password123" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByText("home page")).toBeInTheDocument();
-    await waitFor(() => expect(localStorage.getItem("jwt")).toBe("jwt-1"));
+    await waitFor(() => expect(localStorage.getItem(`jwt:${API_BASE}`)).toBe("jwt-1"));
   });
 });

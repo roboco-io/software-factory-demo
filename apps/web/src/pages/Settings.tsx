@@ -33,7 +33,7 @@ function SettingsForm({ user }: { user: User }) {
     try {
       const r = await client.put<{ user: User }>("/user", { user: payload });
       signIn(r.user);
-      navigate(`/profile/${r.user.username}`);
+      navigate(`/profile/${encodeURIComponent(r.user.username)}`);
     } catch (err) {
       setErrors(err instanceof ApiFailure ? err.errors : { app: ["failed"] });
     }

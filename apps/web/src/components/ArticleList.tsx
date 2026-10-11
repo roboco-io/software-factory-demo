@@ -17,6 +17,7 @@ export function ArticleList({ query }: { query: string }) {
   useEffect(() => {
     let live = true;
     setData(null);
+    setErrors(null);
     const sep = query ? "&" : "";
     client
       .get<{ articles: Article[]; articlesCount: number }>(

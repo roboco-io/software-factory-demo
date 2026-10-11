@@ -40,6 +40,7 @@ usersRouter.post("/users", async (c) => {
   const username = requireString(input.username, "username").trim();
   const email = normEmail(requireString(input.email, "email"));
   const password = requireString(input.password, "password");
+  if (password.length < MIN_PASSWORD) throw tooShort("password", MIN_PASSWORD);
   const d = db(c.env);
   await assertUnique(d, "username", username);
   await assertUnique(d, "email", email);

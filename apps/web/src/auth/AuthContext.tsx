@@ -10,7 +10,7 @@ import {
 import { API_BASE, ApiFailure, createClient, type Client } from "../api/client";
 import type { User } from "../api/types";
 
-const KEY = "jwt";
+const KEY = `jwt:${API_BASE}`;
 type AuthState = {
   user: User | null;
   ready: boolean;

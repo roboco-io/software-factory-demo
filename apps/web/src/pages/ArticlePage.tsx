@@ -57,11 +57,14 @@ export function ArticlePage() {
         <div className="container">
           <h1>{article.title}</h1>
           <div className="article-meta">
-            <Link to={`/profile/${article.author.username}`}>
+            <Link to={`/profile/${encodeURIComponent(article.author.username)}`}>
               <img src={avatar(article.author.image)} alt="" />
             </Link>
             <div className="info">
-              <Link to={`/profile/${article.author.username}`} className="author">
+              <Link
+                to={`/profile/${encodeURIComponent(article.author.username)}`}
+                className="author"
+              >
                 {article.author.username}
               </Link>
               <span className="date">{new Date(article.createdAt).toDateString()}</span>
@@ -138,10 +141,16 @@ export function ArticlePage() {
                   <p className="card-text">{c.body}</p>
                 </div>
                 <div className="card-footer">
-                  <Link to={`/profile/${c.author.username}`} className="comment-author">
+                  <Link
+                    to={`/profile/${encodeURIComponent(c.author.username)}`}
+                    className="comment-author"
+                  >
                     <img src={avatar(c.author.image)} className="comment-author-img" alt="" />
                   </Link>{" "}
-                  <Link to={`/profile/${c.author.username}`} className="comment-author">
+                  <Link
+                    to={`/profile/${encodeURIComponent(c.author.username)}`}
+                    className="comment-author"
+                  >
                     {c.author.username}
                   </Link>
                   <span className="date-posted">{new Date(c.createdAt).toDateString()}</span>
