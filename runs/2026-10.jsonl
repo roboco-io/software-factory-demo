@@ -6,3 +6,4 @@
 {"ts":"2026-10-11T11:06:01.622Z","issue":7,"pr":8,"role":"review","engine":"codex","model":"gpt-6.1-sol","ok":true,"turns":1,"costUsd":null,"durationMs":9332,"failureReason":null,"round":0}
 {"ts":"2026-10-11T11:06:33.156Z","issue":7,"pr":8,"role":"gate","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":0}
 {"ts":"2026-10-11T11:07:57.206Z","issue":7,"pr":null,"role":"deploy","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":0}
+{"ts":"2026-10-11T11:09:51.721Z","issue":9,"pr":null,"role":"triage","engine":"pi","model":"deepseek/deepseek-flash","ok":true,"turns":3,"costUsd":0.00171018,"durationMs":6595,"failureReason":null,"round":0}
