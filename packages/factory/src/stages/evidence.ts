@@ -1,4 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
@@ -6,7 +15,7 @@ import { scrubEnv } from "../agents/env";
 import { tail } from "../exec/checks";
 import type { ProcessResult } from "../exec/process";
 import { TooManyFilesError, type ChangedFile } from "../github/port";
-import { isSafeRelativePath, isTestFile, planSuites } from "../policy/evidence";
+import { isSafeRelativePath, isTestFile, planSuites, SUITES } from "../policy/evidence";
 import { parsePrMeta } from "../report/pr";
 import type { StageDeps } from "./deps";
 
@@ -111,6 +120,9 @@ export interface SuiteOutcome {
   targets: string[];
   baseCode: number | null;
   headCode: number | null;
+  // JSON 보고서로 판정한 결과를 한 줄로 요약한다(판정 T3-b).
+  baseSummary: string;
+  headSummary: string;
   baseOutput: string;
   headOutput: string;
 }
@@ -125,6 +137,77 @@ export interface EvidenceResult {
   unsupported: string[];
   suites: SuiteOutcome[];
 }
+
+// vitest 4.1.11 `--reporter=json` 보고서 중 판정에 쓰는 필드만 검증한다(실제 출력으로 확인했다).
+// 파일을 수집하지 못하면(모듈 없음, 문법 오류) assertionResults가 비고 message에 오류가 들어간다.
+const VitestReportSchema = z.object({
+  testResults: z.array(
+    z.object({
+      name: z.string(),
+      status: z.string(),
+      message: z.string().optional(),
+      assertionResults: z.array(z.object({ status: z.string() })),
+    }),
+  ),
+});
+type VitestReport = z.infer<typeof VitestReportSchema>;
+
+function readReport(file: string): VitestReport | null {
+  try {
+    if (!existsSync(file)) return null;
+    const r = VitestReportSchema.safeParse(JSON.parse(readFileSync(file, "utf8")));
+    return r.success ? r.data : null;
+  } catch {
+    return null;
+  }
+}
+
+interface SideJudgement {
+  missing: string[];
+  collectErrors: string[];
+  passed: number;
+  failed: number;
+}
+
+// 대상 파일마다 보고서 항목을 절대 경로가 정확히 같은 것으로 찾는다(부분 문자열 일치 금지).
+// vitest는 실제 경로(realpath)를 쓸 수 있으므로 트리 루트의 두 형태를 모두 받는다.
+function judgeSide(report: VitestReport, treeRoot: string, files: string[]): SideJudgement {
+  const roots = new Set([treeRoot]);
+  try {
+    roots.add(realpathSync(treeRoot));
+  } catch {
+    // 루트를 해석하지 못하면 원래 경로만 쓴다.
+  }
+  const out: SideJudgement = { missing: [], collectErrors: [], passed: 0, failed: 0 };
+  for (const file of files) {
+    const names = new Set([...roots].map((r) => path.join(r, file)));
+    const entries = report.testResults.filter((t) => names.has(t.name));
+    if (entries.length === 0) {
+      out.missing.push(file);
+      continue;
+    }
+    for (const e of entries) {
+      if ((e.message ?? "").trim() !== "" || e.assertionResults.length === 0) {
+        out.collectErrors.push(file);
+      }
+      for (const a of e.assertionResults) {
+        if (a.status === "passed") out.passed += 1;
+        if (a.status === "failed") out.failed += 1;
+      }
+    }
+  }
+  return out;
+}
+
+function summarize(j: SideJudgement | null): string {
+  if (j === null) return "결과 보고서 없음";
+  const parts = [`통과 ${j.passed}, 실패 ${j.failed}`];
+  if (j.missing.length > 0) parts.push(`수집되지 않음: ${j.missing.join(", ")}`);
+  if (j.collectErrors.length > 0) parts.push(`수집 오류: ${j.collectErrors.join(", ")}`);
+  return parts.join("; ");
+}
+
+type ExecResult = ProcessResult & { spawnError?: true };
 
 // 이 함수는 PR 코드(테스트와 그 의존성)를 실행한다. 시크릿·GitHub 토큰이 없는 evidence job에서만 부른다(spec 7.1.2).
 export async function runEvidence(deps: StageDeps, plan: EvidencePlan): Promise<EvidenceResult> {
@@ -162,7 +245,7 @@ export async function runEvidence(deps: StageDeps, plan: EvidencePlan): Promise<
   if (flagLike !== undefined) return done(false, `안전하지 않은 테스트 파일 경로: ${flagLike}`);
   const env = scrubEnv(deps.settings.env);
   const repo = deps.settings.workdir;
-  const exec = async (cmd: string, args: string[], cwd: string): Promise<ProcessResult> => {
+  const exec = async (cmd: string, args: string[], cwd: string): Promise<ExecResult> => {
     try {
       return await deps.spawn(cmd, args, {
         cwd,
@@ -170,7 +253,8 @@ export async function runEvidence(deps: StageDeps, plan: EvidencePlan): Promise<
         signal: AbortSignal.timeout(EVIDENCE_STEP_TIMEOUT_MS),
       });
     } catch (e) {
-      return { code: null, stdout: "", stderr: String(e) };
+      // 프로세스를 시작하지 못한 경우(ENOENT 등). 시간 초과(code null)와 구분한다.
+      return { code: null, stdout: "", stderr: String(e), spawnError: true };
     }
   };
   const head = await exec("git", ["rev-parse", "--verify", "HEAD^{commit}"], repo);
@@ -190,14 +274,33 @@ export async function runEvidence(deps: StageDeps, plan: EvidencePlan): Promise<
     );
     if (add.code !== 0)
       return done(false, `base 커밋 ${plan.baseSha}로 작업 트리를 만들지 못했다.`);
+    const overlayReal = realpathSync(overlay);
     for (const file of plan.testFiles) {
       const target = path.resolve(overlay, file);
       if (!isSafeRelativePath(file) || !target.startsWith(`${overlay}${path.sep}`)) {
         return done(false, `안전하지 않은 테스트 파일 경로: ${file}`);
       }
+      // 심볼릭 링크 등 일반 파일이 아닌 head 항목은 덮어쓰지 않는다(판정 T3-b).
+      const entry = await exec("git", ["ls-tree", plan.headSha, "--", file], repo);
+      const m = /^(\d{6}) (\w+) [0-9a-f]+\t(.+)$/.exec(entry.stdout.trim());
+      if (entry.code !== 0 || m === null || m[3] !== file) {
+        return done(false, `head에서 ${file}을 찾지 못했다.`);
+      }
+      if (m[1] !== "100644" || m[2] !== "blob") {
+        return done(false, `head의 ${file}이 일반 파일(100644)이 아니다(mode ${m[1]}).`);
+      }
       const blob = await exec("git", ["show", `${plan.headSha}:${file}`], repo);
       if (blob.code !== 0 || blob.truncated) return done(false, `head에서 ${file}을 읽지 못했다.`);
-      mkdirSync(path.dirname(target), { recursive: true });
+      const dir = path.dirname(target);
+      mkdirSync(dir, { recursive: true });
+      // base 트리 안의 심볼릭 링크 디렉토리를 따라 트리 밖에 쓰지 않는다.
+      const dirReal = realpathSync(dir);
+      if (dirReal !== overlayReal && !dirReal.startsWith(`${overlayReal}${path.sep}`)) {
+        return done(false, `안전하지 않은 테스트 파일 경로: ${file}(트리 밖을 가리킨다)`);
+      }
+      if (existsSync(target) && !lstatSync(target).isFile()) {
+        return done(false, `안전하지 않은 테스트 파일 경로: ${file}(base에서 일반 파일이 아니다)`);
+      }
       writeFileSync(target, blob.stdout);
     }
     for (const [dir, name] of [
@@ -205,29 +308,91 @@ export async function runEvidence(deps: StageDeps, plan: EvidencePlan): Promise<
       [repo, "head"],
     ] as const) {
       const install = await exec("pnpm", ["install", "--frozen-lockfile"], dir);
+      if (install.spawnError) return done(false, `${name} 트리에서 pnpm을 시작하지 못했다.`);
       if (install.code !== 0) return done(false, `${name} 트리의 의존성 설치가 실패했다.`);
     }
     const suites: SuiteOutcome[] = [];
+    const judged: { base: SideJudgement | null; head: SideJudgement | null }[] = [];
+    let spawnFailed = false;
     for (const run of runs) {
-      const args = ["--filter", run.filter, "exec", "vitest", "run", ...run.targets];
-      const base = await exec("pnpm", args, overlay);
-      const after = await exec("pnpm", args, repo);
+      const pkgDir = SUITES.find((s) => s.suite === run.suite)?.dir ?? "";
+      const files = run.targets.map((t) => `${pkgDir}${t}`);
+      // 보고서는 두 트리 밖(root 바로 아래)에 쓴다.
+      const runSide = async (where: "base" | "head", cwd: string) => {
+        const out = path.join(root, `${run.suite}-${where}.json`);
+        rmSync(out, { force: true });
+        const args = [
+          "--filter",
+          run.filter,
+          "exec",
+          "vitest",
+          "run",
+          "--reporter=default",
+          "--reporter=json",
+          `--outputFile.json=${out}`,
+          ...run.targets,
+        ];
+        const res = await exec("pnpm", args, cwd);
+        const report = readReport(out);
+        return { res, judged: report === null ? null : judgeSide(report, cwd, files) };
+      };
+      const base = await runSide("base", overlay);
+      const after = await runSide("head", repo);
+      if (base.res.spawnError || after.res.spawnError) spawnFailed = true;
+      judged.push({ base: base.judged, head: after.judged });
       suites.push({
         suite: run.suite,
         targets: run.targets,
-        baseCode: base.code,
-        headCode: after.code,
-        baseOutput: tail(`${base.stdout}\n${base.stderr}`.trim(), 3000),
-        headOutput: tail(`${after.stdout}\n${after.stderr}`.trim(), 3000),
+        baseCode: base.res.code,
+        headCode: after.res.code,
+        baseSummary: summarize(base.judged),
+        headSummary: summarize(after.judged),
+        baseOutput: tail(`${base.res.stdout}\n${base.res.stderr}`.trim(), 3000),
+        headOutput: tail(`${after.res.stdout}\n${after.res.stderr}`.trim(), 3000),
       });
     }
+    if (spawnFailed) return done(false, "테스트 프로세스(pnpm)를 시작하지 못했다.", suites);
     if (suites.some((s) => s.baseCode === null || s.headCode === null)) {
       return done(false, "테스트 실행이 시간 제한(15분)에 걸리거나 강제 종료되었다.", suites);
     }
-    if (!suites.every((s) => s.headCode === 0)) {
+    if (judged.some((j) => j.base === null || j.head === null)) {
+      return done(
+        false,
+        "vitest JSON 결과 보고서가 없거나 형식이 틀려 판정할 수 없다(fail closed).",
+        suites,
+      );
+    }
+    const sides = judged as { base: SideJudgement; head: SideJudgement }[];
+    const headMissing = sides.flatMap((j) => j.head.missing);
+    if (headMissing.length > 0) {
+      return done(
+        false,
+        `재현 테스트가 수정 후(head) 코드에서 수집되지 않았다: ${headMissing.join(", ")}`,
+        suites,
+      );
+    }
+    if (
+      sides.some((j) => j.head.collectErrors.length > 0 || j.head.failed > 0 || j.head.passed === 0)
+    ) {
       return done(false, "재현 테스트가 수정 후(head) 코드에서 실패했다.", suites);
     }
-    if (!suites.some((s) => s.baseCode !== 0)) {
+    const baseMissing = sides.flatMap((j) => j.base.missing);
+    if (baseMissing.length > 0) {
+      return done(
+        false,
+        `재현 테스트가 수정 전(base) 코드에서 수집되지 않았다: ${baseMissing.join(", ")}`,
+        suites,
+      );
+    }
+    const baseErrors = sides.flatMap((j) => j.base.collectErrors);
+    if (baseErrors.length > 0) {
+      return done(
+        false,
+        `base에서 테스트를 실행할 수 없다(수집 오류): ${baseErrors.join(", ")}. 수정 전 코드에서 단언이 실패하는 재현 테스트여야 한다.`,
+        suites,
+      );
+    }
+    if (!sides.some((j) => j.base.failed > 0)) {
       return done(
         false,
         "재현 테스트가 수정 전(base) 코드에서도 통과했다. 버그를 재현하지 못하는 테스트다.",
@@ -253,7 +418,7 @@ export function renderEvidenceText(r: EvidenceResult): string {
   if (r.unsupported.length > 0) lines.push(`실행하지 않은 테스트: ${r.unsupported.join(", ")}`);
   for (const s of r.suites) {
     lines.push(
-      `- ${s.suite} ${s.targets.join(" ")}: base 종료 코드 ${s.baseCode}, head 종료 코드 ${s.headCode}`,
+      `- ${s.suite} ${s.targets.join(" ")}: base 종료 코드 ${s.baseCode}(${s.baseSummary}), head 종료 코드 ${s.headCode}(${s.headSummary})`,
     );
     if (!r.ok) lines.push(`  base 출력:\n${s.baseOutput}`, `  head 출력:\n${s.headOutput}`);
   }
