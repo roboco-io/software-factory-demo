@@ -57,7 +57,9 @@ function reqStr(v: Values, name: string): string {
 }
 
 function phaseOf(v: Values): Phase {
-  const p = str(v, "phase") ?? "all";
+  // 워크플로가 단계를 명시하도록 기본값을 두지 않는다. all은 명시했을 때만(로컬·테스트) 쓴다.
+  const p = str(v, "phase");
+  if (!p) throw new UsageError(`--phase <${PHASES.join("|")}>가 필요하다`);
   if (!(PHASES as readonly string[]).includes(p)) {
     throw new UsageError(`--phase는 ${PHASES.join("|")} 중 하나다`);
   }

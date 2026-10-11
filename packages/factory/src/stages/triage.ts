@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { runStructured, type TimedResult } from "../agents/budget";
 import { loadPrompt, renderPrompt } from "../agents/prompt";
 import type { Budget, EngineName } from "../agents/types";
@@ -28,6 +29,21 @@ export interface TriageOutcome {
   result: TimedResult;
   triage: Triage | null;
 }
+
+const ResultSchema = z.object({
+  ok: z.boolean(),
+  summary: z.string(),
+  model: z.string(),
+  turns: z.number().int().min(0),
+  costUsd: z.number().min(0).optional(),
+  usage: z.object({ inputTokens: z.number().min(0), outputTokens: z.number().min(0) }),
+  failureReason: z
+    .enum(["max_turns", "timeout", "budget", "engine_error", "invalid_output"])
+    .optional(),
+  durationMs: z.number().min(0),
+});
+
+const OutcomeSchema = z.object({ result: ResultSchema, triage: TriageSchema.nullable() });
 
 export const triageStage: PhasedStage<{ issue: number }, TriagePlan, TriageOutcome> = {
   name: "triage",
@@ -67,7 +83,16 @@ export const triageStage: PhasedStage<{ issue: number }, TriagePlan, TriageOutco
     );
     return { result, triage: value };
   },
+  parseOutcome(raw) {
+    return OutcomeSchema.parse(raw) as TriageOutcome;
+  },
   async publish(deps, plan, { result, triage }) {
+    // prepare 이후 상태가 바뀌었으면(사람이 라벨을 바꾼 경우 등) 아무것도 하지 않는다.
+    const { state } = await readState(deps.gh, plan.issue);
+    if (!canTransition(state, triage ? "triaged" : "needs-human", "triage")) {
+      deps.log(`triage: #${plan.issue} is ${state}; skipping publish`);
+      return;
+    }
     await record(deps, agentRecord("triage", plan.engine, plan.model, result, plan.issue, null, 0));
     if (!triage) {
       await moveTo(

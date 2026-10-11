@@ -104,4 +104,15 @@ describe("createGit", () => {
     expect(existsSync(path.join(work, ".git/rebase-merge"))).toBe(false);
     expect(existsSync(path.join(work, ".git/rebase-apply"))).toBe(false);
   });
+
+  describe("createGit ref validation", () => {
+    it("rejects branch names and start points outside the factory pattern", async () => {
+      const { port } = await setup();
+      await expect(port.checkoutNewBranch("--orphan", "origin/main")).rejects.toThrow(
+        /invalid branch/,
+      );
+      await expect(port.checkoutNewBranch("factory/issue-1", "-x")).rejects.toThrow(/start point/);
+      await expect(port.importBundle("/tmp/x", "evil;rm")).rejects.toThrow(/invalid branch/);
+    });
+  });
 });

@@ -68,4 +68,18 @@ describe("triage stage", () => {
       "type:feature",
     ]);
   });
+
+  it("does nothing in publish when the state changed after prepare", async () => {
+    const pi = createFakeAdapter(loadFakeScript("triage-feature"), "pi");
+    const h = makeTestDeps({ adapters: { pi } });
+    const issue = h.gh.addIssue({ title: "t" });
+    const plan = (await triageStage.prepare(h.deps, { issue: issue.number }))!;
+    const outcome = await triageStage.agent(h.deps, plan);
+    await h.gh.removeLabel(issue.number, "factory:new").catch(() => {});
+    await h.gh.addLabels(issue.number, ["factory:approved"]);
+    await triageStage.publish(h.deps, plan, outcome);
+    expect((await h.gh.getIssue(issue.number)).labels).toEqual(["factory:approved"]);
+    expect(await h.gh.listComments(issue.number)).toEqual([]);
+    expect(await h.deps.runs.since(new Date(0))).toEqual([]);
+  });
 });

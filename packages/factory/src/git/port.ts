@@ -24,6 +24,13 @@ function splitZ(out: string): string[] {
   return out.split("\0").filter((s) => s.length > 0);
 }
 
+const BRANCH = /^(main|factory\/issue-[1-9]\d*)$/;
+const START_POINT = /^(origin\/)?(main|factory\/issue-[1-9]\d*)$/;
+
+function assertRef(kind: string, value: string, re: RegExp): void {
+  if (!re.test(value)) throw new Error(`git: invalid ${kind}: ${JSON.stringify(value)}`);
+}
+
 export function createGit(
   cwd: string,
   identity: GitIdentity,
@@ -59,6 +66,8 @@ export function createGit(
       ]);
     },
     async checkoutNewBranch(branch, startPoint) {
+      assertRef("branch", branch, BRANCH);
+      assertRef("start point", startPoint, START_POINT);
       await git("checkout", ["checkout", "-B", branch, startPoint]);
     },
     async changedFiles() {
@@ -100,6 +109,7 @@ export function createGit(
       await git("bundle", ["bundle", "create", file, "HEAD"]);
     },
     async importBundle(file, branch) {
+      assertRef("branch", branch, BRANCH);
       await git("fetch", ["fetch", "--no-tags", file, `+HEAD:refs/heads/${branch}`]);
       await git("checkout", ["checkout", branch]);
     },

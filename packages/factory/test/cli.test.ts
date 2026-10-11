@@ -39,8 +39,19 @@ describe("cli main", () => {
     });
     const issue = h.gh.addIssue({ title: "t" });
     const phases: Phase[] = [];
-    expect(await main(["triage", "--issue", String(issue.number)], context(h, phases))).toBe(0);
+    expect(
+      await main(["triage", "--issue", String(issue.number), "--phase", "all"], context(h, phases)),
+    ).toBe(0);
     expect(phases).toEqual(["all"]);
     expect((await h.gh.getIssue(issue.number)).labels).toContain("factory:triaged");
+  });
+
+  it("requires an explicit --phase", async () => {
+    const out: string[] = [];
+    expect(await main(["triage", "--issue", "1"], context(makeTestDeps(), [], out))).toBe(2);
+    expect(out.join("\n")).toContain("--phase");
+    expect(
+      await main(["triage", "--issue", "1", "--phase", "bogus"], context(makeTestDeps(), [], out)),
+    ).toBe(2);
   });
 });

@@ -10,6 +10,12 @@ import { loadSettings, type StageDeps } from "./stages/deps";
 import type { Phase } from "./stages/phased";
 
 export function buildDeps(env: NodeJS.ProcessEnv, phase: Phase): StageDeps {
+  if (phase === "agent") {
+    // agent 단계 프로세스에는 GitHub 토큰이 있으면 안 된다(워크플로 설정 오류를 막는다).
+    for (const key of ["GITHUB_TOKEN", "GH_TOKEN", "FACTORY_TOKEN", "ACTIONS_RUNTIME_TOKEN"]) {
+      if (env[key] || process.env[key]) throw new Error(`agent 단계에 ${key}가 있다`);
+    }
+  }
   const loaded = loadSettings(env);
   const settings = phase === "agent" ? { ...loaded, token: null } : loaded;
   const agents = loadAgentsConfig();
