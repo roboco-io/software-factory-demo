@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Issue } from "../github/port";
-import { cell, codeCell, demote, inline, readMarker, writeMarker } from "../report/text";
+import { cell, codeCell, inline, quoteBlock, readMarker, writeMarker } from "../report/text";
 import { isBot, record, runLink, stepRecord } from "./common";
 import type { Settings, StageDeps } from "./deps";
 
@@ -108,13 +108,6 @@ function short(s: string, max: number): string {
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
-// demote(인용문)에 더해, 인용문 안에서도 ATX(`#`)·setext(`===`, `---`) 제목이 생기지 않게 이스케이프한다.
-function quote(s: string): string {
-  return demote(s)
-    .replace(/^((?:>[ \t]?)+)([ \t]*)#/gm, "$1$2\\#")
-    .replace(/^((?:>[ \t]?)+)([ \t]*)(=+|-+)([ \t]*)$/gm, "$1$2\\$3$4");
-}
-
 const GO_NOTE = "구현은 리포 쓰기 권한자의 `@factory go`가 있어야 시작한다.";
 
 export function renderErrorIssue(
@@ -145,7 +138,7 @@ export function renderErrorIssue(
       "",
       "대표 메시지:",
       "",
-      quote(e.message || "(메시지 없음)"),
+      quoteBlock(e.message || "(메시지 없음)"),
       "",
       `같은 fingerprint의 에러가 다시 기록되면 새 이슈 대신 이 이슈에 코멘트로 횟수를 갱신한다. ${GO_NOTE}${runLink(settings)}`,
       "",
@@ -175,7 +168,7 @@ export function renderFeedbackIssue(
       "",
       "본문:",
       "",
-      quote(f.body),
+      quoteBlock(f.body),
       "",
       `${GO_NOTE}${runLink(settings)}`,
       "",
@@ -219,6 +212,14 @@ export async function runIntake(deps: StageDeps, client: IntakeClient): Promise<
     failed: 0,
   };
   const ack = { errors: [] as string[], feedback: [] as number[] };
+  // 이슈·코멘트가 이미 만들어진 뒤의 기록 실패로 항목을 실패 처리하면 ack가 빠져 중복 이슈가 생긴다. 로그만 남긴다.
+  const tryRecord = async (n: number) => {
+    try {
+      await record(deps, stepRecord("intake", n, null, true));
+    } catch (err) {
+      deps.log(`intake: #${n} 실행 기록 실패(무시): ${String(err)}`);
+    }
+  };
   const create = async (issue: { title: string; body: string }, labels: string[]) => {
     const n = await deps.gh.createIssue(issue.title, issue.body, labels);
     open.push({
@@ -231,7 +232,7 @@ export async function runIntake(deps: StageDeps, client: IntakeClient): Promise<
       isPullRequest: false,
     });
     summary.created.push(n);
-    await record(deps, stepRecord("intake", n, null, true));
+    await tryRecord(n);
   };
   for (const e of parsed.data.errors) {
     try {
@@ -239,7 +240,7 @@ export async function runIntake(deps: StageDeps, client: IntakeClient): Promise<
       if (existing) {
         await deps.gh.comment(existing.number, renderErrorRepeat(e, deps.settings));
         summary.updated.push(existing.number);
-        await record(deps, stepRecord("intake", existing.number, null, true));
+        await tryRecord(existing.number);
       } else {
         // 같은 fingerprint의 이슈가 닫혀 있으면 코멘트하지 않고 회귀로 새 이슈를 연다.
         const previous = await latestClosed("source:error", "error", e.fingerprint);
@@ -269,8 +270,14 @@ export async function runIntake(deps: StageDeps, client: IntakeClient): Promise<
     }
   }
   if (ack.errors.length + ack.feedback.length > 0) {
-    await client.ack(ack);
-    summary.acked = { errors: ack.errors.length, feedback: ack.feedback.length };
+    try {
+      await client.ack(ack);
+      summary.acked = { errors: ack.errors.length, feedback: ack.feedback.length };
+    } catch (err) {
+      // 이슈는 이미 만들었다. 요약은 출력되어야 하므로 던지지 않고 실패로 센다. 다음 실행이 같은 항목을 중복 없이 ack한다.
+      summary.failed += ack.errors.length + ack.feedback.length;
+      deps.log(`intake: ack 실패, 다음 실행에서 다시 시도한다: ${String(err)}`);
+    }
   }
   return summary;
 }

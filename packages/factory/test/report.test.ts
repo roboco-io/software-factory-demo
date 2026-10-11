@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cell, sanitize } from "../src/report/text";
+import { cell, quoteBlock, sanitize } from "../src/report/text";
 import { commitMessage, parseFactoryIssues } from "../src/report/commit";
 import {
   findTriage,
@@ -266,5 +266,27 @@ describe("text sanitizers (CodeQL)", () => {
   it("escapes backslashes before pipes in cells", () => {
     expect(cell("a\\|b")).toBe("a\\\\\\|b");
     expect(cell("a|b")).toBe("a\\|b");
+  });
+});
+
+describe("quoteBlock", () => {
+  it("quotes every line and escapes headings, setext lines and raw HTML", () => {
+    const out = quoteBlock(
+      [
+        "# a",
+        " > # x",
+        ">  > ===",
+        "> ---",
+        "<h1>x</h1>",
+        "<details>",
+        '<img src=x onerror="y">',
+      ].join("\n"),
+    );
+    for (const line of out.split("\n")) {
+      expect(line.startsWith("> ")).toBe(true);
+      expect(line).not.toMatch(/^((?:[ \t]*>)+)[ \t]*(#|=+\s*$|-+\s*$)/);
+      expect(line).not.toContain("<");
+    }
+    expect(out).toContain("&lt;h1>x&lt;/h1>");
   });
 });

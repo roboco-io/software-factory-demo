@@ -223,8 +223,11 @@ export const COMMANDS: Record<string, Handler> = {
   intake: async (ctx) => {
     const url = ctx.env.INTAKE_URL ?? "";
     const token = ctx.env.INTAKE_TOKEN ?? "";
-    if (!/^https?:\/\/\S+$/.test(url) || token.length === 0) {
-      throw new UsageError("INTAKE_URL(http(s)://...)과 INTAKE_TOKEN 환경변수가 필요하다");
+    // 토큰이 평문으로 나가지 않게 https만 허용한다. 테스트용 loopback만 http를 허용한다.
+    const secure =
+      /^https:\/\/\S+$/.test(url) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/\S*)?$/.test(url);
+    if (!secure || token.length === 0) {
+      throw new UsageError("INTAKE_URL(https://...)과 INTAKE_TOKEN 환경변수가 필요하다");
     }
     const summary = await runIntake(
       ctx.buildDeps(ctx.env, "all"),

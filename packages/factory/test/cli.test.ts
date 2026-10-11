@@ -33,6 +33,8 @@ describe("cli main", () => {
       { INTAKE_URL: "https://x/api" },
       { INTAKE_TOKEN: "t" },
       { INTAKE_URL: "ftp://x", INTAKE_TOKEN: "t" },
+      { INTAKE_URL: "http://api.example.com/api", INTAKE_TOKEN: "t" },
+      { INTAKE_URL: "http://localhost.evil.com/api", INTAKE_TOKEN: "t" },
     ]) {
       const out: string[] = [];
       expect(await main(["intake"], { ...context(h, phases, out), env, fetch: fetchImpl })).toBe(2);
@@ -84,6 +86,21 @@ describe("cli main", () => {
     expect(out.join("\n")).not.toContain("s3cret-token");
     expect(auth).toEqual(["Bearer s3cret-token", "Bearer s3cret-token"]);
     expect(acks).toEqual([{ errors: [], feedback: [7] }]);
+  });
+
+  it("intake prints the summary and exits 1 when ack throws", async () => {
+    const h = makeTestDeps();
+    const fetchImpl = (async (input: string | URL | Request) => {
+      if (String(input).endsWith("/ack")) return new Response("no", { status: 500 });
+      return Response.json({
+        errors: [],
+        feedback: [{ id: 7, body: "b", path: "/#/", createdAt: "t" }],
+      });
+    }) as typeof fetch;
+    const out: string[] = [];
+    const env = { INTAKE_URL: "http://127.0.0.1:8787/api", INTAKE_TOKEN: "t" };
+    expect(await main(["intake"], { ...context(h, [], out), env, fetch: fetchImpl })).toBe(1);
+    expect(JSON.parse(out[0] ?? "")).toMatchObject({ created: [1], failed: 1 });
   });
 
   it("runs the command stage with COMMENT_BODY from env", async () => {

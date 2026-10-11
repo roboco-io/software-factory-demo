@@ -250,6 +250,41 @@ describe("createOctokitPort pagination and caps", () => {
     ]);
   });
 
+  it("lists closed issues newest first and stops after 5 pages", async () => {
+    const urls: string[] = [];
+    const inner = pagedFetch(
+      Object.fromEntries(
+        [1, 2, 3, 4, 5, 6, 7].map((p) => [
+          `/repos/o/r/issues?page=${p}`,
+          {
+            body: [
+              {
+                number: p,
+                title: "t",
+                body: null,
+                user: { login: "bot" },
+                labels: [{ name: "source:error" }],
+                state: "closed",
+              },
+            ],
+            headers: link("/repos/o/r/issues", p + 1),
+          },
+        ]),
+      ),
+    );
+    const spy = ((input: string | URL | Request, init?: RequestInit) => {
+      urls.push(String(input instanceof Request ? input.url : input));
+      return inner(input, init);
+    }) as typeof fetch;
+    const gh = createOctokitPort({ token: "t", owner: "o", repo: "r", fetch: spy });
+    expect((await gh.listClosedIssuesWithLabel("source:error")).map((i) => i.number)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    expect(urls).toHaveLength(5);
+    expect(urls[0]).toContain("sort=created");
+    expect(urls[0]).toContain("direction=desc");
+  });
+
   it("follows Link headers for listPullFiles", async () => {
     const gh = mk({
       "/repos/o/r/pulls/9?page=1": { body: { changed_files: 2 } },

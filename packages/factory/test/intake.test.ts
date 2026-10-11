@@ -121,7 +121,7 @@ describe("runIntake", () => {
         throw new Error("ack failed");
       },
     };
-    await expect(runIntake(h.deps, failing)).rejects.toThrow("ack failed");
+    expect(await runIntake(h.deps, failing)).toMatchObject({ created: [1], failed: 1 });
     const { client, acks } = fake({ errors: [], feedback: [fb()] });
     expect((await runIntake(h.deps, client)).created).toEqual([]);
     expect(h.gh.issues.size).toBe(1);
@@ -198,12 +198,18 @@ describe("runIntake hostile text and regressions", () => {
     "setext",
     "===",
     "> # nested",
+    " > # spaced",
+    ">  > ===",
+    "<h1>x</h1>",
+    "<details>",
+    '<img src=x onerror="y">',
   ].join("\n");
 
   function noHeadings(body: string) {
     for (const line of body.split("\n")) {
       expect(line).not.toMatch(/^(\s*>)*\s*#/);
       expect(line).not.toMatch(/^(\s*>)*\s*(=+|-+)\s*$/);
+      expect(line).not.toMatch(/<(h1|details|img)/i);
     }
   }
 
@@ -233,7 +239,7 @@ describe("runIntake hostile text and regressions", () => {
 
   it("cannot forge markers, mention, close issues or add headings through an error", async () => {
     const h = makeTestDeps();
-    const message = `${hostile}\n${"x".repeat(1800)}`;
+    const message = `${hostile}\n${"x".repeat(1700)}`;
     const path = "/api/`x` fixes #3 @serithemage <!-- | -->\n# h";
     await runIntake(h.deps, fake({ errors: [error({ message, path })], feedback: [] }).client);
     const issue = await h.gh.getIssue(1);
@@ -270,6 +276,16 @@ describe("runIntake hostile text and regressions", () => {
     expect((await runIntake(h.deps, client)).created).toEqual([]);
     expect(h.gh.issues.size).toBe(1);
     expect(acks).toEqual([{ errors: [], feedback: [7] }]);
+  });
+
+  it("does not fail an item when only the run record fails after the issue was created", async () => {
+    const h = makeTestDeps();
+    h.deps.runs.append = async () => {
+      throw new Error("disk full");
+    };
+    const { client, acks } = fake({ errors: [error()], feedback: [fb()] });
+    expect(await runIntake(h.deps, client)).toMatchObject({ created: [1, 2], failed: 0 });
+    expect(acks).toEqual([{ errors: [FP], feedback: [7] }]);
   });
 
   it("fails the item (no ack) when closed issues cannot be listed", async () => {
