@@ -98,12 +98,20 @@ export function agentRunsOn(runs: RunRecord[], day: string): number {
     .length;
 }
 
+// 오늘 사용한 implement·fix 런 수. 아직 기록되지 않은 진행 중 런은 factory:in-progress 이슈 수로 센다.
+export async function usedToday(deps: StageDeps, runs: RunRecord[], day: string): Promise<number> {
+  const inFlight = (await deps.gh.listOpenIssues()).filter((i) =>
+    i.labels.includes(stateLabel("in-progress")),
+  ).length;
+  return agentRunsOn(runs, day) + inFlight;
+}
+
 export async function blockedReason(deps: StageDeps): Promise<string | null> {
   if (deps.settings.paused) {
     return "팩토리가 일시 중지 상태다(리포 변수 FACTORY_PAUSED=true). 사람이 변수를 false로 바꾸면 다시 진행한다.";
   }
   const day = utcDay(deps.now());
-  const used = agentRunsOn(await deps.runs.since(new Date(`${day}T00:00:00.000Z`)), day);
+  const used = await usedToday(deps, await deps.runs.since(new Date(`${day}T00:00:00.000Z`)), day);
   if (used >= deps.settings.dailyLimit) {
     return `오늘(UTC ${day}) implement·fix 런이 일일 상한 ${deps.settings.dailyLimit}회에 도달했다. factory-guard가 다음 날(UTC) 다시 시작한다.`;
   }

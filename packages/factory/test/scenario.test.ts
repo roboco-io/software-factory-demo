@@ -60,6 +60,7 @@ describe("factory flow with fake engines (spec 8장)", () => {
     expect(await runCommand(h.deps, { issue, actor: "outsider", body: "@factory go" })).toBe(
       "rejected",
     );
+    expect(await labels(h, issue)).not.toContain("factory:approved");
     expect(await runCommand(h.deps, { issue, actor: "serithemage", body: "@factory go" })).toBe(
       "approved",
     );
@@ -144,6 +145,9 @@ describe("factory flow with fake engines (spec 8장)", () => {
     );
     expect(await runOnClosed(h.deps, { pr: pr.number })).toBe(true);
     expect(await runDeployed(h.deps, { sha })).toEqual([issue]);
+    expect(await labels(h, issue)).toContain("factory:deployed");
+    expect(await labels(h, issue)).not.toContain("factory:needs-human");
+    expect((await h.gh.getIssue(issue)).state).toBe("closed");
   });
 
   it("keeps triaging but stops starting implement runs after the breaker trips", async () => {
@@ -175,5 +179,10 @@ describe("factory flow with fake engines (spec 8장)", () => {
     await runPhase(implementStage, "all", h.deps, { issue, sender: BOT }, null);
     expect(claude.calls).toHaveLength(0);
     expect(await labels(h, issue)).toContain("factory:approved");
+    const alerts = (await h.gh.listOpenIssues()).filter((i) => i.labels.includes("factory:alert"));
+    expect(alerts).toHaveLength(1);
+    expect((await h.gh.listComments(issue)).some((c) => c.body.includes("FACTORY_PAUSED"))).toBe(
+      true,
+    );
   });
 });

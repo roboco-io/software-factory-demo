@@ -105,6 +105,24 @@ export function createOctokitPort(o: {
       });
       return data.filter((i) => !i.pull_request).map(toIssue);
     },
+    async latestIssueWithLabel(label) {
+      const { data } = await octokit.rest.issues.listForRepo({
+        ...base,
+        state: "all",
+        labels: label,
+        sort: "created",
+        direction: "desc",
+        per_page: 10,
+      });
+      const i = data.find((x) => !x.pull_request);
+      return i
+        ? {
+            number: i.number,
+            state: i.state === "closed" ? "closed" : "open",
+            createdAt: i.created_at,
+          }
+        : null;
+    },
     async addLabels(n, labels) {
       if (labels.length > 0)
         await octokit.rest.issues.addLabels({ ...base, issue_number: n, labels });

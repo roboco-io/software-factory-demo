@@ -145,6 +145,7 @@ export function makeTestDeps(
   const gh = new InMemoryGitHub({ botLogin: BOT });
   gh.permissions.set("serithemage", "admin");
   const git = new FakeGit(dir);
+  gh.clock = () => now;
   git.onPush = (branch, sha, files) => gh.setBranch(branch, sha, files);
   let now = opts.now ?? new Date("2026-10-12T03:00:00.000Z");
   const logs: string[] = [];

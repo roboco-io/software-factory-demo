@@ -1,6 +1,6 @@
 import type { RunRecord } from "../runs/store";
 import { stateLabel } from "../state/machine";
-import { agentRunsOn, branchFor, runLink, utcDay } from "./common";
+import { branchFor, runLink, usedToday, utcDay } from "./common";
 import type { StageDeps } from "./deps";
 
 export const BREAKER = { windowDays: 7, minRuns: 10, minSuccessRate: 0.5 } as const;
@@ -19,8 +19,8 @@ export interface GuardResult {
   resumed: number[];
 }
 
-export function evaluateBreaker(runs: RunRecord[], now: Date): BreakerState {
-  const from = now.getTime() - BREAKER.windowDays * DAY_MS;
+export function evaluateBreaker(runs: RunRecord[], now: Date, since?: Date): BreakerState {
+  const from = Math.max(now.getTime() - BREAKER.windowDays * DAY_MS, since?.getTime() ?? 0);
   const relevant = runs.filter(
     (r) => (r.role === "implement" || r.role === "fix") && Date.parse(r.ts) >= from,
   );
@@ -39,11 +39,23 @@ export function evaluateBreaker(runs: RunRecord[], now: Date): BreakerState {
 
 export async function runGuard(deps: StageDeps): Promise<GuardResult> {
   const now = deps.now();
+  let from = now.getTime() - BREAKER.windowDays * DAY_MS;
+  // 사람이 알림 이슈를 보고 재개한 뒤에는 그 이전 실패를 다시 세지 않는다.
+  const lastAlert = await deps.gh.latestIssueWithLabel("factory:alert");
+  if (lastAlert) from = Math.max(from, Date.parse(lastAlert.createdAt) || 0);
   const runs = await deps.runs.since(new Date(now.getTime() - BREAKER.windowDays * DAY_MS));
-  const breaker = evaluateBreaker(runs, now);
+  const breaker = evaluateBreaker(runs, now, new Date(from));
   let paused = deps.settings.paused;
   if (breaker.tripped && !paused) {
     await deps.gh.setVariable("FACTORY_PAUSED", "true");
+    // 열려 있는 알림이 있으면 새로 만들지 않고 댓글로 갱신한다.
+    if (lastAlert?.state === "open") {
+      await deps.gh.comment(
+        lastAlert.number,
+        `차단기가 다시 작동했다(성공률 ${Math.round((breaker.successRate ?? 0) * 100)}%, ${breaker.total}회 중 ${breaker.succeeded}회 성공).${runLink(deps.settings)}`,
+      );
+      return { breaker, paused: true, resumed: [] };
+    }
     const pct = Math.round((breaker.successRate ?? 0) * 100);
     await deps.gh.createIssue(
       "팩토리 실패율 차단기 작동",
@@ -54,7 +66,7 @@ export async function runGuard(deps: StageDeps): Promise<GuardResult> {
   }
   const resumed: number[] = [];
   if (!paused) {
-    let used = agentRunsOn(runs, utcDay(now));
+    let used = await usedToday(deps, runs, utcDay(now));
     const approved = (await deps.gh.listOpenIssues())
       .filter((i) => i.labels.includes(stateLabel("approved")))
       .sort((a, b) => a.number - b.number);

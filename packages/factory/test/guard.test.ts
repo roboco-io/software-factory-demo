@@ -115,4 +115,65 @@ describe("runGuard", () => {
     h.gh.addIssue({ title: "a", labels: ["factory:approved"] });
     expect((await runGuard(h.deps)).resumed).toEqual([]);
   });
+
+  it("counts in-progress issues against the daily capacity", async () => {
+    const h = makeTestDeps({ now: NOW, settings: { dailyLimit: 3 } });
+    await seed(h, [run("2026-10-12T01:00:00.000Z", true)]);
+    h.gh.addIssue({ title: "running", labels: ["factory:in-progress"] });
+    const a = h.gh.addIssue({ title: "a", labels: ["factory:approved"] });
+    h.gh.addIssue({ title: "b", labels: ["factory:approved"] });
+    expect((await runGuard(h.deps)).resumed).toEqual([a.number]);
+  });
+
+  it("is idempotent: a second guard run adds no dispatch beyond capacity and no second alert", async () => {
+    const h = makeTestDeps({ now: NOW, settings: { dailyLimit: 2 } });
+    h.gh.addIssue({ title: "a", labels: ["factory:approved"] });
+    h.gh.addIssue({ title: "b", labels: ["factory:approved"] });
+    h.gh.addIssue({ title: "c", labels: ["factory:approved"] });
+    await runGuard(h.deps);
+    expect(h.gh.dispatches).toHaveLength(2);
+    // dispatch된 이슈는 implement가 in-progress로 옮긴다.
+    for (const d of h.gh.dispatches) {
+      await h.gh.removeLabel(Number(d.inputs.issue), "factory:approved");
+      await h.gh.addLabels(Number(d.inputs.issue), ["factory:in-progress"]);
+    }
+    expect((await runGuard(h.deps)).resumed).toEqual([]);
+    expect(h.gh.dispatches).toHaveLength(2);
+
+    const t = makeTestDeps({ now: NOW });
+    await seed(
+      t,
+      Array.from({ length: 10 }, () => run("2026-10-11T00:00:00.000Z", false)),
+    );
+    await runGuard(t.deps);
+    t.deps.settings.paused = true;
+    await runGuard(t.deps);
+    t.deps.settings.paused = false;
+    await runGuard(t.deps);
+    const alerts = (await t.gh.listOpenIssues()).filter((i) => i.labels.includes("factory:alert"));
+    expect(alerts).toHaveLength(1);
+  });
+
+  it("does not re-trip on old failures after a human releases the pause and closes the alert", async () => {
+    const h = makeTestDeps({ now: NOW });
+    await seed(
+      h,
+      Array.from({ length: 10 }, () => run("2026-10-11T00:00:00.000Z", false)),
+    );
+    await runGuard(h.deps);
+    const alert = (await h.gh.listOpenIssues()).find((i) => i.labels.includes("factory:alert"))!;
+    await h.gh.closeIssue(alert.number);
+    h.gh.variables.set("FACTORY_PAUSED", "false");
+    h.deps.settings.paused = false;
+    h.setNow(new Date("2026-10-12T05:00:00.000Z"));
+    const r = await runGuard(h.deps);
+    expect(r).toMatchObject({ paused: false, breaker: { total: 0, tripped: false } });
+    expect(h.gh.variables.get("FACTORY_PAUSED")).toBe("false");
+    // 새 실패 10회는 다시 차단기를 건다.
+    await seed(
+      h,
+      Array.from({ length: 10 }, () => run("2026-10-12T04:00:00.000Z", false)),
+    );
+    expect((await runGuard(h.deps)).paused).toBe(true);
+  });
 });

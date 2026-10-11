@@ -14,6 +14,12 @@ export interface Issue {
   isPullRequest: boolean;
 }
 
+export interface LabeledIssueRef {
+  number: number;
+  state: "open" | "closed";
+  createdAt: string;
+}
+
 export interface Comment {
   id: number;
   author: string;
@@ -67,6 +73,8 @@ export class ConflictError extends Error {
 export interface GitHubPort {
   getIssue(n: number): Promise<Issue>;
   listOpenIssues(): Promise<Issue[]>;
+  // 열림·닫힘 상관없이 라벨이 붙은 이슈(PR 제외) 가운데 가장 최근에 만든 것.
+  latestIssueWithLabel(label: string): Promise<LabeledIssueRef | null>;
   addLabels(n: number, labels: string[]): Promise<void>;
   removeLabel(n: number, label: string): Promise<void>;
   comment(n: number, body: string): Promise<void>;

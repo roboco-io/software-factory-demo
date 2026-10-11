@@ -79,4 +79,11 @@ describe("guard helpers", () => {
     }
     expect(await blockedReason(h.deps)).toMatch(/일일 상한 2회/);
   });
+
+  it("counts in-progress issues as in-flight runs against the daily limit", async () => {
+    const h = makeTestDeps({ settings: { dailyLimit: 1 } });
+    expect(await blockedReason(h.deps)).toBeNull();
+    h.gh.addIssue({ title: "running", labels: ["factory:in-progress"] });
+    expect(await blockedReason(h.deps)).toMatch(/일일 상한 1회/);
+  });
 });

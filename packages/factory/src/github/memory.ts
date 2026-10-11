@@ -1,4 +1,5 @@
 import {
+  type LabeledIssueRef,
   BranchNotFoundError,
   ConflictError,
   type ChangedFile,
@@ -57,6 +58,8 @@ export class InMemoryGitHub implements GitHubPort {
     [];
   readonly orphanMessages = new Map<string, string>();
   readonly writes: { branch: string; path: string; message: string }[] = [];
+  readonly createdAt = new Map<number, string>();
+  clock: () => Date = () => new Date();
   injectConflicts = 0;
   mergeResult = true;
   private seq = 1;
@@ -78,6 +81,7 @@ export class InMemoryGitHub implements GitHubPort {
       isPullRequest: false,
     };
     this.issues.set(issue.number, issue);
+    this.createdAt.set(issue.number, this.clock().toISOString());
     return { ...issue, labels: [...issue.labels] };
   }
 
@@ -147,6 +151,15 @@ export class InMemoryGitHub implements GitHubPort {
     return [...this.issues.values()]
       .filter((i) => i.state === "open")
       .map((i) => ({ ...i, labels: [...i.labels] }));
+  }
+  async latestIssueWithLabel(label: string): Promise<LabeledIssueRef | null> {
+    const hits = [...this.issues.values()]
+      .filter((i) => !i.isPullRequest && i.labels.includes(label))
+      .sort((a, b) => b.number - a.number);
+    const i = hits[0];
+    return i
+      ? { number: i.number, state: i.state, createdAt: this.createdAt.get(i.number) ?? "" }
+      : null;
   }
   async addLabels(n: number, labels: string[]): Promise<void> {
     const cur = this.labelsOf(n);
