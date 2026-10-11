@@ -1,0 +1,36 @@
+name: factory-command
+run-name: "factory-command #${{ github.event.issue.number }}"
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+concurrency:
+  # 에이전트 run과 다른 그룹이다. @factory stop이 실행 중인 구현 뒤에서 기다리지 않게 한다.
+  group: factory-command-${{ github.event.issue.number }}
+  cancel-in-progress: false
+jobs:
+  command:
+    if: contains(github.event.comment.body, '@factory') && !endsWith(github.event.comment.user.login, '[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: main, persist-credentials: false }
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      # 코멘트 본문과 작성자는 신뢰할 수 없는 입력이다. 스크립트에 끼워 넣지 않고 env로만 넘긴다.
+      - run: pnpm -s factory command --issue "$ISSUE" --actor "$ACTOR"
+        env:
+          FACTORY_TOKEN: ${{ steps.app.outputs.token }}
+          FACTORY_BOT_USER_ID: ${{ vars.FACTORY_BOT_USER_ID }}
+          ISSUE: ${{ github.event.issue.number }}
+          ACTOR: ${{ github.event.comment.user.login }}
+          COMMENT_BODY: ${{ github.event.comment.body }}

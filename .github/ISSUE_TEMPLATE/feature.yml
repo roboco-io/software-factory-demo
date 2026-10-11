@@ -1,0 +1,22 @@
+name: 기능 요청
+description: 팩토리가 구현할 기능을 요청한다. 쓰기 권한자가 `@factory go`를 남겨야 구현이 시작된다.
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 목표
+      description: 사용자가 무엇을 할 수 있어야 하는가
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 수용 기준
+      description: 완료를 판단할 수 있는 기준을 한 줄에 하나씩 쓴다. RealWorld 기능이면 해당 .hurl 파일 이름을 쓴다.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: 참고

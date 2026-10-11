@@ -1,0 +1,35 @@
+# T2·T3 경로(factory/risk-policy.yml)는 사람 승인 없이 병합되지 않는다. 정책 파일과 함께 고친다.
+# packages/factory/test/codeowners.test.ts가 정책의 T2·T3 패턴과 추적 중인 T2·T3 파일이 모두 여기에 걸리는지 확인한다.
+# 마지막으로 일치한 줄이 적용된다. 앞에 "/"가 없는 이름은 어느 디렉토리에 있든 일치한다.
+
+# T3: 팩토리 규칙·워크플로·에이전트 지침
+/.github/ @serithemage
+/factory/ @serithemage
+/packages/factory/ @serithemage
+AGENTS.md @serithemage
+CLAUDE.md @serithemage
+.claude/ @serithemage
+.agents/ @serithemage
+/scripts/ @serithemage
+/tests/realworld/vendor/ @serithemage
+/tests/realworld/UPSTREAM.txt @serithemage
+
+# T2: 인증·마이그레이션·의존성·배포 설정
+/apps/api/src/auth/ @serithemage
+/apps/api/src/middleware/auth.ts @serithemage
+/apps/api/src/lib/password.ts @serithemage
+/apps/api/src/lib/token.ts @serithemage
+/apps/api/src/routes/users.ts @serithemage
+/apps/api/migrations/ @serithemage
+/apps/*/wrangler.* @serithemage
+.dev.vars @serithemage
+package.json @serithemage
+/pnpm-*.yaml @serithemage
+
+# T2(default): 어떤 규칙에도 맞지 않는 루트 설정 파일
+/eslint.config.js @serithemage
+/tsconfig.base.json @serithemage
+/.nvmrc @serithemage
+/.prettierrc.json @serithemage
+/.prettierignore @serithemage
+/.gitignore @serithemage

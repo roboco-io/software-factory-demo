@@ -1,0 +1,27 @@
+name: factory-contract
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * 1"
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: main, persist-credentials: false }
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter factory test:contract
+        env:
+          FACTORY_CONTRACT: "1"
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+          CODEX_MODEL: ${{ vars.CODEX_MODEL }}
+          PI_MODEL: ${{ vars.PI_MODEL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}

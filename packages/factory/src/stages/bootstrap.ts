@@ -1,0 +1,58 @@
+import { ENGINES } from "../agents/types";
+import { TIERS } from "../policy/risk";
+import { DATA_BRANCH } from "../runs/store";
+import { STATES, stateLabel } from "../state/machine";
+import type { StageDeps } from "./deps";
+
+export interface LabelSpec {
+  name: string;
+  color: string;
+  description: string;
+}
+
+export const LABELS: LabelSpec[] = [
+  ...STATES.map((s) => ({
+    name: stateLabel(s),
+    color: "5319e7",
+    description: `팩토리 상태: ${s}`,
+  })),
+  ...[1, 2, 3].map((n) => ({
+    name: `factory:round-${n}`,
+    color: "c5def5",
+    description: `수정 라운드 ${n}/3`,
+  })),
+  { name: "factory:alert", color: "b60205", description: "팩토리 실패율 차단기 알림" },
+  ...TIERS.map((t) => ({
+    name: `risk:${t}`,
+    color: "fbca04",
+    description: `위험 등급 ${t} (factory/risk-policy.yml)`,
+  })),
+  ...(["feature", "bug", "docs", "feedback"] as const).map((t) => ({
+    name: `type:${t}`,
+    color: "0e8a16",
+    description: `분류: ${t}`,
+  })),
+  ...ENGINES.map((e) => ({
+    name: `agent:${e}`,
+    color: "d4c5f9",
+    description: `구현 엔진을 ${e}로 지정`,
+  })),
+  {
+    name: "source:deploy",
+    color: "d93f0b",
+    description: "프로덕션 배포·스모크 실패로 사람에게 돌아온 이슈",
+  },
+];
+
+export async function runBootstrap(deps: StageDeps): Promise<{ labels: number; branch: string }> {
+  for (const l of LABELS) await deps.gh.ensureLabel(l.name, l.color, l.description);
+  await deps.gh.createOrphanBranch(
+    DATA_BRANCH,
+    {
+      "README.md":
+        "# factory-data\n\n팩토리 런 기록 브랜치다. 단계 런이 끝날 때마다 `runs/YYYY-MM.jsonl`(UTC 월)에 한 줄을 추가한다. 봇만 쓰며 보호 규칙을 걸지 않는다.\n",
+    },
+    "chore: factory-data 고아 브랜치 생성",
+  );
+  return { labels: LABELS.length, branch: DATA_BRANCH };
+}

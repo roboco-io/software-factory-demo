@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { buildDeps } from "./main";
+import { runBootstrap } from "./stages/bootstrap";
 import { runCommand } from "./stages/command";
 import { runDeployFailed, runDeployed } from "./stages/deploy";
 import { fixStage } from "./stages/fix";
@@ -143,6 +144,10 @@ export const COMMANDS: Record<string, Handler> = {
       ctx.stdout(`구현 역할 PR이 T3 경로를 바꿨다: ${report.forbidden.join(", ")}`);
       return 1;
     }
+    return 0;
+  },
+  bootstrap: async (ctx) => {
+    ctx.stdout(JSON.stringify(await runBootstrap(ctx.buildDeps(ctx.env, "all"))));
     return 0;
   },
   guard: async (ctx) => {

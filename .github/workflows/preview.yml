@@ -13,8 +13,51 @@ env:
   API_URL: https://sfd-api-pr-${{ github.event.pull_request.number }}.${{ vars.WORKERS_SUBDOMAIN }}.workers.dev
   WEB_PREVIEW_URL: ${{ vars.WEB_URL }}pr-preview/pr-${{ github.event.pull_request.number }}/
 jobs:
-  deploy:
+  policy:
+    # 봇 PR이 T2·T3 경로를 바꾸면 사람 승인 전에 에이전트가 쓴 코드가 Cloudflare 토큰과 함께 실행되지 않도록 프리뷰를 만들지 않는다.
+    # 판정은 base 커밋의 팩토리 코드와 정책으로 한다(PR이 판정 코드를 고쳐 우회하지 못하게).
     if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      allowed: ${{ steps.risk.outputs.allowed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          {
+            ref: "${{ github.event.pull_request.base.sha }}",
+            path: base,
+            persist-credentials: false,
+          }
+      - uses: pnpm/action-setup@v6
+        with: { package_json_file: base/package.json }
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: base/.nvmrc
+          cache: pnpm
+          cache-dependency-path: base/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: base
+      # 첫 줄은 base에 팩토리 CLI가 아직 없는 P2 도입 PR만 해당한다. 판정이 실패하면 allowed가 비어 배포하지 않는다.
+      - id: risk
+        working-directory: base
+        run: |
+          if [ ! -f packages/factory/src/cli.ts ]; then echo "allowed=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          pnpm -s factory risk --pr "$PR" --json > "$RUNNER_TEMP/risk.json"
+          echo "allowed=$(jq -r .previewAllowed "$RUNNER_TEMP/risk.json")" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - if: steps.risk.outputs.allowed != 'true'
+        uses: marocchino/sticky-pull-request-comment@v3.0.5
+        with:
+          header: api-preview
+          message: |
+            **프리뷰 생략:** 팩토리 봇 PR이 T2 이상 경로를 바꿨다. 사람(CODEOWNERS) 승인 전에는 에이전트가 쓴 코드를 Cloudflare 토큰과 함께 실행하지 않는다.
+  deploy:
+    needs: policy
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository && needs.policy.outputs.allowed == 'true'
     runs-on: ubuntu-latest
     concurrency:
       group: gh-pages

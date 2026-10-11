@@ -1,0 +1,17 @@
+name: 버그 리포트
+description: 잘못 동작하는 기능을 알린다.
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 절차
+      description: 요청 또는 화면 조작을 순서대로 쓴다
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대한 결과와 실제 결과
+    validations:
+      required: true
