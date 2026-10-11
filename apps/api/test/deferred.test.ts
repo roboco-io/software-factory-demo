@@ -7,8 +7,6 @@ describe("deferred features (left for the factory)", () => {
   it.each([
     ["POST", "/profiles/x/follow"],
     ["DELETE", "/profiles/x/follow"],
-    ["POST", "/articles/x/favorite"],
-    ["DELETE", "/articles/x/favorite"],
     ["GET", "/articles/feed"],
   ])("%s %s without auth → 401 token is missing", async (method, path) => {
     const res = await api(path, { method });
@@ -24,13 +22,6 @@ describe("deferred features (left for the factory)", () => {
     const known = await api(`/profiles/${a.username}/follow`, { method: "DELETE", token: a.token });
     expect(known.status).toBe(501);
     expect(((await known.json()) as ErrBody).errors.follow).toEqual(["not implemented"]);
-  });
-
-  it("favorite unknown slug → 404 article", async () => {
-    const a = await register("fav");
-    const res = await api("/articles/ghost-slug/favorite", { method: "POST", token: a.token });
-    expect(res.status).toBe(404);
-    expect(((await res.json()) as ErrBody).errors.article).toEqual(["not found"]);
   });
 
   it("feed with auth → 501", async () => {

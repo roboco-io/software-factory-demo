@@ -32,7 +32,7 @@ export const serializeArticle = (
   a: ArticleRow,
   tagList: string[],
   author: Pick<UserRow, "username" | "bio" | "image">,
-  opts: { body: boolean },
+  opts: { body: boolean; favorited?: boolean; favoritesCount?: number },
 ) => ({
   slug: a.slug,
   title: a.title,
@@ -41,9 +41,8 @@ export const serializeArticle = (
   tagList,
   createdAt: a.createdAt,
   updatedAt: a.updatedAt,
-  // 팩토리 데모용으로 남긴 기능: 즐겨찾기(팔로우) 구현 시 함께 바꾼다 (routes/deferred.ts 참고)
-  favorited: false,
-  favoritesCount: 0,
+  favorited: opts.favorited ?? false,
+  favoritesCount: opts.favoritesCount ?? 0,
   author: serializeProfile(author, false),
 });
 
