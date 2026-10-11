@@ -259,7 +259,7 @@ describe("runIntake hostile text and regressions", () => {
       expect(text).not.toMatch(/(fixes|closes) #\d/);
     }
     fenced(issue.body, 1);
-    expect(issue.body).toContain("````\n```\n");
+    expect(issue.body).toContain("```\n````\n");
     expect(findIntakeIssue([issue], h.deps.settings, "error", OTHER)).toBeNull();
     expect(findIntakeIssue([issue], h.deps.settings, "error", FP)?.number).toBe(1);
   });
