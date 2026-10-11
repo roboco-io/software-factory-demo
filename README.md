@@ -7,4 +7,5 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
 
 ## 배포 URL
 
-배포 후 기록한다(Task 13).
+- 웹: https://roboco.io/software-factory-demo/
+- API: https://sfd-api.roboco.workers.dev/api

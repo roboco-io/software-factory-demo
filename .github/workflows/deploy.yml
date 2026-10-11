@@ -1,0 +1,62 @@
+name: deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  API_URL: https://sfd-api.${{ vars.WORKERS_SUBDOMAIN }}.workers.dev
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - working-directory: apps/api
+        run: pnpm exec wrangler d1 migrations apply sfd-prod --remote
+      - working-directory: apps/api
+        run: pnpm exec wrangler deploy
+  web:
+    needs: api
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web build
+        env:
+          VITE_API_BASE: ${{ env.API_URL }}/api
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: apps/web/dist
+          keep_files: true
+  smoke:
+    needs: web
+    runs-on: ubuntu-latest
+    steps:
+      - name: API health
+        run: curl -fsS --retry 5 --retry-delay 5 "$API_URL/api/health"
+      - name: API articles
+        run: curl -fsS "$API_URL/api/articles?limit=1" | grep -q '"articlesCount"'
+      - name: Web index (Pages 반영 대기 최대 5분)
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS "${{ vars.WEB_URL }}" | grep -q 'Conduit' && exit 0
+            sleep 10
+          done
+          exit 1
