@@ -1,0 +1,9 @@
+pnpm-lock.yaml
+tests/realworld/vendor/
+apps/web/public/styles.css
+**/dist/
+**/.wrangler/
+**/playwright-report/
+**/test-results/
+docs/superpowers/
+.superpowers/
