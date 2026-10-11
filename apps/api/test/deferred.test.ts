@@ -33,9 +33,21 @@ describe("deferred features (left for the factory)", () => {
     expect(((await res.json()) as ErrBody).errors.article).toEqual(["not found"]);
   });
 
-  it("feed with auth → 501, tags → 501", async () => {
+  it("feed with auth → 501", async () => {
     const a = await register("feed");
     expect((await api("/articles/feed", { token: a.token })).status).toBe(501);
-    expect((await api("/tags")).status).toBe(501);
+  });
+
+  it("tags → 200 with stored tag names, no auth", async () => {
+    const a = await register("tagger");
+    await api("/articles", {
+      method: "POST",
+      token: a.token,
+      body: { article: { title: "T", description: "d", body: "b", tagList: ["alpha", "beta"] } },
+    });
+    const res = await api("/tags");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { tags: string[] };
+    expect(body.tags).toEqual(expect.arrayContaining(["alpha", "beta"]));
   });
 });

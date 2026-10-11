@@ -6,6 +6,7 @@ import { deferredRouter } from "./routes/deferred";
 import { articlesRouter } from "./routes/articles";
 import { commentsRouter } from "./routes/comments";
 import { profilesRouter } from "./routes/profiles";
+import { tagsRouter } from "./routes/tags";
 import { usersRouter } from "./routes/users";
 
 const app = new Hono<AppEnv>();
@@ -26,6 +27,7 @@ router.route("/", usersRouter);
 router.route("/", profilesRouter);
 router.route("/", articlesRouter);
 router.route("/", commentsRouter);
+router.route("/", tagsRouter);
 
 app.route("/api", router);
 

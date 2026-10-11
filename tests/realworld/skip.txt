@@ -2,4 +2,3 @@
 favorites.hurl
 feed.hurl
 profiles.hurl
-tags.hurl
