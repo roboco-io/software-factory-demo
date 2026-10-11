@@ -12,7 +12,8 @@ export const TEST_FILE_PATTERNS: readonly string[] = [
 // `-`로 시작하는 세그먼트는 vitest 옵션으로 해석될 수 있으므로 거부한다.
 export function isSafeRelativePath(file: string): boolean {
   if (file.length === 0 || file.length > 300) return false;
-  if (file.startsWith("/") || /[\0\r\n\\]/.test(file)) return false;
+  // 공백·제어 문자·bidi 문자·비ASCII를 거부하고 안전한 문자만 허용한다(역슬래시 포함 거부).
+  if (!/^[A-Za-z0-9._/@+-]+$/.test(file) || file.startsWith("/")) return false;
   return file
     .split("/")
     .every((seg) => seg !== "" && seg !== "." && seg !== ".." && !seg.startsWith("-"));

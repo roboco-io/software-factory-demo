@@ -33,6 +33,19 @@ describe("isSafeRelativePath", () => {
   });
 });
 
+describe("isSafeRelativePath character set", () => {
+  it.each([
+    ["apps/api/test/a b.test.ts", false],
+    ["apps/api/test/a\u0007.test.ts", false],
+    ["apps/api/test/a\u202e.test.ts", false],
+    ["apps/api/test/한글.test.ts", false],
+    ["apps/api/test/a\\b.test.ts", false],
+    ["apps/api/test/a_b@1+x.test.ts", true],
+  ])("%j → %s", (file, expected) => {
+    expect(isSafeRelativePath(file)).toBe(expected);
+  });
+});
+
 describe("planSuites", () => {
   it("groups runnable test files by workspace package and reports what it cannot run", () => {
     expect(
