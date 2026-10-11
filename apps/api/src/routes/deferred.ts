@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "../db/client";
-import { articles, users } from "../db/schema";
+import { users } from "../db/schema";
 import type { AppEnv } from "../env";
 import { notFound, notImplemented } from "../lib/errors";
 import { requireAuth } from "../middleware/auth";
@@ -18,16 +18,6 @@ deferredRouter.on(["POST", "DELETE"], "/profiles/:username/follow", requireAuth,
     .get();
   if (!row) throw notFound("profile");
   throw notImplemented("follow");
-});
-
-deferredRouter.on(["POST", "DELETE"], "/articles/:slug/favorite", requireAuth, async (c) => {
-  const row = await db(c.env)
-    .select({ id: articles.id })
-    .from(articles)
-    .where(eq(articles.slug, c.req.param("slug")))
-    .get();
-  if (!row) throw notFound("article");
-  throw notImplemented("favorite");
 });
 
 deferredRouter.get("/articles/feed", requireAuth, () => {

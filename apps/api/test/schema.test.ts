@@ -10,6 +10,7 @@ describe("schema", () => {
       "article_tags",
       "articles",
       "comments",
+      "favorites",
       "tags",
       "users",
     ]);

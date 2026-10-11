@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { db, type Db } from "../db/client";
-import { articles, articleTags, tags, users } from "../db/schema";
+import { articles, articleTags, favorites, tags, users } from "../db/schema";
 import type { AppEnv } from "../env";
 import { readWrapped, requireString } from "../lib/body";
 import { ApiError, forbidden, invalid, notFound } from "../lib/errors";
@@ -62,11 +62,49 @@ export async function loadArticle(d: Db, slug: string) {
   return row ?? undefined;
 }
 
-async function respondOne(d: Db, slug: string) {
+// D1 allows at most 100 bound parameters per query. The "mine" query binds userId plus the ids.
+export const FAVORITES_CHUNK = 99;
+
+export function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+async function favoritesFor(d: Db, ids: number[], userId: number | null) {
+  const counts = new Map<number, number>(ids.map((id) => [id, 0]));
+  const mine = new Set<number>();
+  for (const part of chunk(ids, FAVORITES_CHUNK)) {
+    const rows = await d
+      .select({ articleId: favorites.articleId, n: count() })
+      .from(favorites)
+      .where(inArray(favorites.articleId, part))
+      .groupBy(favorites.articleId);
+    for (const r of rows) counts.set(r.articleId, r.n);
+    if (userId !== null) {
+      const own = await d
+        .select({ articleId: favorites.articleId })
+        .from(favorites)
+        .where(and(eq(favorites.userId, userId), inArray(favorites.articleId, part)));
+      for (const r of own) mine.add(r.articleId);
+    }
+  }
+  return { counts, mine };
+}
+
+async function respondOne(d: Db, slug: string, userId: number | null) {
   const row = await loadArticle(d, slug);
   if (!row) throw notFound("article");
-  const tagList = (await tagsFor(d, [row.article.id])).get(row.article.id) ?? [];
-  return { article: serializeArticle(row.article, tagList, row.author, { body: true }) };
+  const id = row.article.id;
+  const tagList = (await tagsFor(d, [id])).get(id) ?? [];
+  const fav = await favoritesFor(d, [id], userId);
+  return {
+    article: serializeArticle(row.article, tagList, row.author, {
+      body: true,
+      favorited: fav.mine.has(id),
+      favoritesCount: fav.counts.get(id) ?? 0,
+    }),
+  };
 }
 
 const intParam = (v: string | undefined, dflt: number, min: number, max: number) => {
@@ -80,14 +118,15 @@ articlesRouter.get("/articles", optionalAuth, async (c) => {
   const q = c.req.query();
   const limit = intParam(q.limit, 20, 1, 100);
   const offset = intParam(q.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-  // 팩토리 데모용으로 남긴 기능: 즐겨찾기(팔로우) 구현 시 함께 바꾼다 (routes/deferred.ts 참고)
-  if (q.favorited !== undefined) return c.json({ articles: [], articlesCount: 0 });
-
   const conds: SQL[] = [];
   if (q.author) conds.push(eq(users.username, q.author));
   if (q.tag)
     conds.push(
       sql`exists (select 1 from article_tags at join tags t on t.id = at.tag_id where at.article_id = ${articles.id} and t.name = ${q.tag})`,
+    );
+  if (q.favorited)
+    conds.push(
+      sql`exists (select 1 from favorites f join users fu on fu.id = f.user_id where f.article_id = ${articles.id} and fu.username = ${q.favorited})`,
     );
   const where = conds.length > 0 ? and(...conds) : undefined;
   const d = db(c.env);
@@ -110,9 +149,18 @@ articlesRouter.get("/articles", optionalAuth, async (c) => {
     d,
     rows.map((r) => r.article.id),
   );
+  const fav = await favoritesFor(
+    d,
+    rows.map((r) => r.article.id),
+    c.get("userId"),
+  );
   return c.json({
     articles: rows.map((r) =>
-      serializeArticle(r.article, tagMap.get(r.article.id) ?? [], r.author, { body: false }),
+      serializeArticle(r.article, tagMap.get(r.article.id) ?? [], r.author, {
+        body: false,
+        favorited: fav.mine.has(r.article.id),
+        favoritesCount: fav.counts.get(r.article.id) ?? 0,
+      }),
     ),
     articlesCount: total?.n ?? 0,
   });
@@ -141,11 +189,11 @@ articlesRouter.post("/articles", requireAuth, async (c) => {
     .returning()
     .get();
   await setTags(d, row.id, tagList);
-  return c.json(await respondOne(d, row.slug), 201);
+  return c.json(await respondOne(d, row.slug, userId), 201);
 });
 
 articlesRouter.get("/articles/:slug", optionalAuth, async (c) =>
-  c.json(await respondOne(db(c.env), c.req.param("slug"))),
+  c.json(await respondOne(db(c.env), c.req.param("slug"), c.get("userId"))),
 );
 
 articlesRouter.put("/articles/:slug", requireAuth, async (c) => {
@@ -168,7 +216,7 @@ articlesRouter.put("/articles/:slug", requireAuth, async (c) => {
   patch.updatedAt = nextTimestamp(found.article.updatedAt);
   await d.update(articles).set(patch).where(eq(articles.id, found.article.id));
   if (newTags !== undefined) await setTags(d, found.article.id, newTags);
-  return c.json(await respondOne(d, found.article.slug));
+  return c.json(await respondOne(d, found.article.slug, userId));
 });
 
 articlesRouter.delete("/articles/:slug", requireAuth, async (c) => {
@@ -179,4 +227,27 @@ articlesRouter.delete("/articles/:slug", requireAuth, async (c) => {
   if (found.article.authorId !== userId) throw forbidden("article");
   await d.delete(articles).where(eq(articles.id, found.article.id));
   return c.body(null, 204);
+});
+
+articlesRouter.post("/articles/:slug/favorite", requireAuth, async (c) => {
+  const userId = authedUserId(c);
+  const d = db(c.env);
+  const found = await loadArticle(d, c.req.param("slug"));
+  if (!found) throw notFound("article");
+  await d
+    .insert(favorites)
+    .values({ userId, articleId: found.article.id, createdAt: new Date().toISOString() })
+    .onConflictDoNothing();
+  return c.json(await respondOne(d, found.article.slug, userId));
+});
+
+articlesRouter.delete("/articles/:slug/favorite", requireAuth, async (c) => {
+  const userId = authedUserId(c);
+  const d = db(c.env);
+  const found = await loadArticle(d, c.req.param("slug"));
+  if (!found) throw notFound("article");
+  await d
+    .delete(favorites)
+    .where(and(eq(favorites.userId, userId), eq(favorites.articleId, found.article.id)));
+  return c.json(await respondOne(d, found.article.slug, userId));
 });
