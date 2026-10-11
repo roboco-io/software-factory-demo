@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AppEnv } from "./env";
 import { ApiError } from "./lib/errors";
+import { deferredRouter } from "./routes/deferred";
+import { profilesRouter } from "./routes/profiles";
 import { usersRouter } from "./routes/users";
 
 const app = new Hono<AppEnv>();
@@ -17,7 +19,9 @@ app.use("/api/*", async (c, next) => {
 
 const router = new Hono<AppEnv>();
 router.get("/health", (c) => c.json({ status: "ok" }));
+router.route("/", deferredRouter);
 router.route("/", usersRouter);
+router.route("/", profilesRouter);
 
 app.route("/api", router);
 
