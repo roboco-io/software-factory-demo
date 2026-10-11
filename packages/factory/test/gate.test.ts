@@ -11,6 +11,7 @@ export const GREEN = {
   "realworld-api": "success",
   e2e: "success",
   "risk-tier": "success",
+  evidence: "success",
 };
 
 export async function verdict(
@@ -44,6 +45,19 @@ describe("checkState", () => {
 });
 
 describe("runGate", () => {
+  it("waits for evidence and dispatches a ci fix when evidence fails", async () => {
+    const h = makeTestDeps();
+    const { pr } = await openBotPr(h);
+    await verdict(h, pr, "sha-a", "APPROVE");
+    const { evidence: _e, ...withoutEvidence } = GREEN;
+    void _e;
+    h.gh.setChecks("sha-a", withoutEvidence);
+    expect(await runGate(h.deps, { pr })).toBe("pending");
+    h.gh.setChecks("sha-a", { ...GREEN, evidence: "failure" });
+    expect(await runGate(h.deps, { pr })).toBe("fix-dispatched");
+    expect(h.gh.merges).toEqual([]);
+  });
+
   it("squash-merges a green T1 PR approved at the current head, with trailers", async () => {
     const h = makeTestDeps();
     const { pr, issue } = await openBotPr(h);

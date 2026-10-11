@@ -19,6 +19,7 @@ const GREEN = {
   "realworld-api": "success",
   e2e: "success",
   "risk-tier": "success",
+  evidence: "success",
 };
 
 const TAGS: FakeStep = {
