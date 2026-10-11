@@ -28,6 +28,7 @@ import {
 } from "./common";
 import type { StageDeps } from "./deps";
 import type { PhasedStage } from "./phased";
+import { clampResult, fileList, importAndVerify } from "./protect";
 import { checkWorkdir, commitType, inspectChanges, previewText, sumRuns } from "./worktree";
 
 export interface ImplementArgs {
@@ -88,8 +89,6 @@ const OutcomeSchema = z.discriminatedUnion("kind", [
 
 export type ImplementOutcome = z.infer<typeof OutcomeSchema>;
 
-const MAX_LISTED_FILES = 20;
-
 // 이미 실행 기록을 남긴 계획. publish 도중 예외가 나도 crashed()가 같은 런을 다시 세지 않게 한다.
 const RECORDED = new WeakSet<ImplementPlan>();
 
@@ -106,23 +105,12 @@ async function recordRuns(
   for (const [i, r] of out.runs.entries()) {
     const ok = i === 0 ? implementOk : fixOk;
     const budget = i === 0 ? plan.budget : plan.fixBudget;
-    const { failureReason: _reported, costUsd, ...rest } = r.result;
-    void _reported;
-    const result: TimedResult = {
-      ...rest,
+    const result = clampResult(
+      r.result,
+      budget,
       ok,
-      turns: Math.min(r.result.turns, budget.maxTurns),
-      durationMs: Math.min(r.result.durationMs, budget.timeoutMs),
-    };
-    if (costUsd !== undefined) {
-      result.costUsd = budget.maxUsd === undefined ? costUsd : Math.min(costUsd, budget.maxUsd);
-    }
-    if (!ok) {
-      result.failureReason =
-        i === 0 && out.kind === "agent-failed"
-          ? out.reason
-          : (r.result.failureReason ?? "engine_error");
-    }
+      i === 0 && out.kind === "agent-failed" ? out.reason : undefined,
+    );
     await record(
       deps,
       agentRecord(
@@ -136,12 +124,6 @@ async function recordRuns(
       ),
     );
   }
-}
-
-function fileList(files: string[]): string {
-  const shown = files.slice(0, MAX_LISTED_FILES).map((f) => `\`${codeCell(f)}\``);
-  const rest = files.length - shown.length;
-  return rest > 0 ? `${shown.join(", ")} 외 ${rest}개` : shown.join(", ");
 }
 
 export const implementStage: PhasedStage<ImplementArgs, ImplementPlan, ImplementOutcome> = {
@@ -324,29 +306,16 @@ export const implementStage: PhasedStage<ImplementArgs, ImplementPlan, Implement
     if (!token) throw new Error("implement publish requires FACTORY_TOKEN");
 
     // 결과 파일은 에이전트가 고칠 수 있었다. 번들(저장소 상태)에서 믿을 값을 모두 다시 구한다.
-    await deps.git.fetch("main");
-    if (deps.settings.bundlePath)
-      await deps.git.importBundle(deps.settings.bundlePath, plan.branch);
-    const head = await deps.git.headSha();
-    if (head !== out.sha) {
-      await rejected(
-        "publish 단계의 재검증에서 변경이 거부되었다(결과 파일의 커밋 SHA가 번들의 head와 다르다).",
-      );
+    const check = await importAndVerify(deps, {
+      branch: plan.branch,
+      baseSha: plan.baseSha,
+      sha: out.sha,
+    });
+    if (!check.ok) {
+      await rejected(check.reason);
       return;
     }
-    if (!(await deps.git.isAncestor(plan.baseSha))) {
-      await rejected(
-        `publish 단계의 재검증에서 변경이 거부되었다(번들 head가 준비 시점 main 커밋 ${plan.baseSha.slice(0, 12)}의 후손이 아니다).`,
-      );
-      return;
-    }
-    const verified = await inspectChanges(deps, "origin/main");
-    if (verified.forbidden.length > 0 || verified.files.length === 0) {
-      await rejected(
-        `publish 단계의 재검증에서 변경이 거부되었다(T3 파일: ${fileList(verified.forbidden) || "없음"}, 변경 파일 수: ${verified.files.length}).`,
-      );
-      return;
-    }
+    const verified = check.verified;
     // 에이전트가 만든 커밋(작성자·메시지)은 믿지 않는다. 검증을 통과한 변경을 신뢰하는 메시지·봇 신원으로 다시 커밋한다.
     await recordRuns(deps, plan, out, true, checksOk);
     await deps.git.resetSoft(plan.baseSha);

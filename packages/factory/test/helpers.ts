@@ -6,6 +6,7 @@ import { loadAgentsConfig } from "../src/config/agents";
 import type { SpawnFn } from "../src/exec/process";
 import type { GitPort } from "../src/git/port";
 import { InMemoryGitHub } from "../src/github/memory";
+import { renderPrBody, type PrMeta } from "../src/report/pr";
 import { loadRiskPolicy } from "../src/policy/risk";
 import { createRunStore } from "../src/runs/store";
 import { DEFAULT_BOT_LOGIN, type Settings, type StageDeps } from "../src/stages/deps";
@@ -182,4 +183,41 @@ export function makeTestDeps(
       now = d;
     },
   };
+}
+
+export async function openBotPr(
+  h: TestHarness,
+  meta: Partial<PrMeta> = {},
+  files = ["apps/api/src/routes/tags.ts"],
+) {
+  const issue = h.gh.addIssue({ title: "태그 목록 API", labels: ["factory:in-review"] });
+  const branch = `factory/issue-${issue.number}`;
+  h.gh.setBranch(branch, "sha-a", files);
+  const full: PrMeta = {
+    issue: issue.number,
+    role: "implement",
+    implementEngine: "claude",
+    implementModel: "claude-sonnet-5-5",
+    round: 0,
+    ...meta,
+  };
+  const body = renderPrBody({
+    meta: full,
+    summary: "s",
+    issueTitle: "태그 목록 API",
+    acceptanceCriteria: [],
+    checks: [],
+    preview: "p",
+    risks: [],
+    risk: { tier: "T1", files: [] },
+    run: { engine: "claude", model: "m", turns: 1, durationMs: 1 },
+  });
+  const pr = await h.gh.createPull({
+    title: "feat: 태그",
+    body,
+    head: branch,
+    base: "main",
+    draft: false,
+  });
+  return { issue: issue.number, pr, branch };
 }

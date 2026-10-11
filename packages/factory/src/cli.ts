@@ -2,9 +2,11 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { buildDeps } from "./main";
 import { runCommand } from "./stages/command";
+import { fixStage } from "./stages/fix";
 import { implementStage } from "./stages/implement";
 import type { StageDeps } from "./stages/deps";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
+import { reviewStage } from "./stages/review";
 import { triageStage } from "./stages/triage";
 
 export interface CliContext {
@@ -92,6 +94,14 @@ export const COMMANDS: Record<string, Handler> = {
     });
     ctx.stdout(outcome);
     return 0;
+  },
+  review: (ctx, v) => phased(ctx, v, reviewStage, { pr: num(v, "pr") }),
+  fix: (ctx, v) => {
+    const reason = reqStr(v, "reason");
+    if (reason !== "review" && reason !== "ci") {
+      throw new UsageError("--reason은 review|ci 중 하나다");
+    }
+    return phased(ctx, v, fixStage, { pr: num(v, "pr"), sha: reqStr(v, "sha"), reason });
   },
   implement: (ctx, v) => {
     const sender = str(v, "sender");
