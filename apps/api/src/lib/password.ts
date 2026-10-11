@@ -1,21 +1,14 @@
 const ITERATIONS = 100_000; // Workers Web Crypto의 PBKDF2 상한
 const enc = new TextEncoder();
-// timingSafeEqual은 Workers 런타임 전용 확장이라 DOM 기본 타입에 없다.
-const subtle = crypto.subtle as SubtleCrypto & {
-  timingSafeEqual(a: ArrayBuffer | ArrayBufferView, b: ArrayBuffer | ArrayBufferView): boolean;
-};
 
 const b64 = (buf: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(buf)));
-const unb64 = (s: string): Uint8Array<ArrayBuffer> =>
-  Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
+const unb64 = (s: string): Uint8Array => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
 
-async function derive(
-  plain: string,
-  salt: Uint8Array<ArrayBuffer>,
-  iterations: number,
-): Promise<ArrayBuffer> {
-  const key = await subtle.importKey("raw", enc.encode(plain), "PBKDF2", false, ["deriveBits"]);
-  return subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
+async function derive(plain: string, salt: Uint8Array, iterations: number): Promise<ArrayBuffer> {
+  const key = await crypto.subtle.importKey("raw", enc.encode(plain), "PBKDF2", false, [
+    "deriveBits",
+  ]);
+  return crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
 }
 
 export async function hashPassword(plain: string): Promise<string> {
@@ -33,7 +26,7 @@ export async function verifyPassword(plain: string, stored: string): Promise<boo
     const expected = unb64(parts[3]!);
     const actual = new Uint8Array(await derive(plain, unb64(parts[2]!), iterations));
     if (actual.length !== expected.length) return false;
-    return subtle.timingSafeEqual(actual, expected);
+    return crypto.subtle.timingSafeEqual(actual, expected);
   } catch {
     return false;
   }
