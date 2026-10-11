@@ -199,6 +199,7 @@ export function createOctokitPort(o: {
         additions: addedLinesFromPatch(f.patch ?? ""),
         additionCount: f.additions,
         ...(f.patch === undefined ? { patchMissing: true } : {}),
+        ...(f.status === "removed" ? { removed: true } : {}),
       }));
     },
     async createPull(input) {

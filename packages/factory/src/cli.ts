@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { buildDeps } from "./main";
 import { runBootstrap } from "./stages/bootstrap";
 import { runCommand } from "./stages/command";
+import { runEvidencePlan } from "./stages/evidence";
 import { runDeployFailed, runDeployed } from "./stages/deploy";
 import { fixStage } from "./stages/fix";
 import { runGate, runOnClosed } from "./stages/gate";
@@ -38,6 +39,8 @@ const OPTIONS = {
   outcome: { type: "string" },
   json: { type: "boolean" },
   check: { type: "boolean" },
+  base: { type: "string" },
+  result: { type: "string" },
 } as const;
 
 const PHASES: readonly Phase[] = ["prepare", "agent", "publish", "all"];
@@ -62,6 +65,12 @@ function str(v: Values, name: string): string | null {
 function reqStr(v: Values, name: string): string {
   const s = str(v, name);
   if (!s) throw new UsageError(`--${name} <값>이 필요하다`);
+  return s;
+}
+
+function sha40(v: Values, name: string): string {
+  const s = reqStr(v, name);
+  if (!/^[0-9a-f]{40}$/.test(s)) throw new UsageError(`--${name}는 40자리 소문자 16진수여야 한다`);
   return s;
 }
 
@@ -173,6 +182,19 @@ export const COMMANDS: Record<string, Handler> = {
     );
     return 0;
   },
+  evidence: async (ctx, v) => {
+    const plan = await runEvidencePlan(ctx.buildDeps(ctx.env, "all"), {
+      pr: num(v, "pr"),
+      headSha: sha40(v, "sha"),
+      baseSha: sha40(v, "base"),
+    });
+    ctx.stdout(
+      v.json === true
+        ? JSON.stringify(plan)
+        : `evidence ${plan.required ? "required" : "not required"}: ${plan.reason}`,
+    );
+    return 0;
+  },
 };
 
 export async function main(argv: string[], ctx: CliContext): Promise<number> {
@@ -203,7 +225,7 @@ export async function main(argv: string[], ctx: CliContext): Promise<number> {
 }
 
 // 이후 Task에서 COMMANDS에 추가하는 핸들러가 쓰는 인자 헬퍼.
-export { optNum, reqStr, str, num };
+export { optNum, reqStr, str, num, sha40 };
 
 // 테스트에서 import할 때는 실행하지 않는다.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

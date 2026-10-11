@@ -182,6 +182,23 @@ describe("createOctokitPort listPullFiles", () => {
       { filename: "new.ts", previousFilename: "old.ts", additions: [], patchMissing: true },
     ]);
   });
+
+  it("marks files GitHub reports as removed", async () => {
+    const gh = port([
+      { method: "GET", path: /pulls\/5$/, status: 200, body: { changed_files: 1 } },
+      {
+        method: "GET",
+        path: /pulls\/5\/files$/,
+        status: 200,
+        body: [
+          { filename: "a.test.ts", status: "removed", additions: 0, patch: "@@ -1 +0,0 @@\n-x" },
+        ],
+      },
+    ]);
+    expect(await gh.listPullFiles(5)).toEqual([
+      { filename: "a.test.ts", additions: [], additionCount: 0, removed: true },
+    ]);
+  });
 });
 
 describe("createOctokitPort pagination and caps", () => {

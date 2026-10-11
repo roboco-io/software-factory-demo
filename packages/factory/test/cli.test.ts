@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakeAdapter, loadFakeScript } from "../src/agents/fake";
 import { main, type CliContext } from "../src/cli";
 import type { Phase } from "../src/stages/phased";
-import { makeTestDeps } from "./helpers";
+import { makeTestDeps, openBotPr } from "./helpers";
 
 function context(
   h: ReturnType<typeof makeTestDeps>,
@@ -73,6 +73,30 @@ describe("cli main", () => {
     expect(out.join("\n")).toContain("--phase");
     expect(
       await main(["triage", "--issue", "1", "--phase", "bogus"], context(makeTestDeps(), [], out)),
+    ).toBe(2);
+  });
+
+  it("evidence prints the plan as JSON and rejects malformed sha options", async () => {
+    const h = makeTestDeps();
+    const { pr } = await openBotPr(h);
+    const out: string[] = [];
+    const head = "a".repeat(40);
+    const base = "b".repeat(40);
+    expect(
+      await main(
+        ["evidence", "--pr", String(pr), "--sha", head, "--base", base, "--json"],
+        context(h, [], out),
+      ),
+    ).toBe(0);
+    expect(JSON.parse(out[0]!)).toMatchObject({
+      pr,
+      required: false,
+      baseSha: base,
+      headSha: head,
+      testFiles: [],
+    });
+    expect(
+      await main(["evidence", "--pr", String(pr), "--sha", "HEAD", "--base", base], context(h)),
     ).toBe(2);
   });
 });
