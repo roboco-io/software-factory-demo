@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AppEnv } from "./env";
-import { ApiError } from "./lib/errors";
+import { ApiError, ROUTE_NOT_FOUND } from "./lib/errors";
 import { deferredRouter } from "./routes/deferred";
 import { articlesRouter } from "./routes/articles";
 import { commentsRouter } from "./routes/comments";
@@ -31,7 +31,7 @@ router.route("/", tagsRouter);
 
 app.route("/api", router);
 
-app.notFound((c) => c.json({ errors: { route: ["not found"] } }, 404));
+app.notFound((c) => c.json(ROUTE_NOT_FOUND, 404));
 app.onError((err, c) => {
   if (err instanceof ApiError) return c.json({ errors: err.errors }, err.status);
   const msg = String((err as { cause?: unknown }).cause ?? err.message);
