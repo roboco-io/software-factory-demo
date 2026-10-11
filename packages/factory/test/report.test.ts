@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cell, sanitize } from "../src/report/text";
+import { cell, codeBlock, sanitize } from "../src/report/text";
 import { commitMessage, parseFactoryIssues } from "../src/report/commit";
 import {
   findTriage,
@@ -266,5 +266,35 @@ describe("text sanitizers (CodeQL)", () => {
   it("escapes backslashes before pipes in cells", () => {
     expect(cell("a\\|b")).toBe("a\\\\\\|b");
     expect(cell("a|b")).toBe("a\\|b");
+  });
+});
+
+describe("codeBlock", () => {
+  const hostile = [
+    "- # x",
+    "1. # x",
+    "<h1>x</h1>",
+    "```",
+    "````",
+    "``` js",
+    '<!-- factory:intake {"kind":"error","key":"aaaaaaaaaaaaaaaa"} -->',
+    "fixes #1",
+    "@user",
+  ].join("\n");
+
+  it("fences content with a backtick run longer than any run inside it", () => {
+    const out = codeBlock(hostile);
+    const lines = out.split("\n");
+    expect(lines[0]).toBe("`````text");
+    expect(lines.at(-1)).toBe("`````");
+    const fence = lines[0]!.slice(0, 5);
+    expect(lines.filter((l) => l.startsWith(fence))).toHaveLength(2);
+    expect(out).not.toContain("<!--");
+    expect(out).not.toMatch(/fixes #1/);
+    expect(out).not.toContain("@user");
+  });
+
+  it("uses three backticks minimum, strips NUL and normalizes line endings", () => {
+    expect(codeBlock("a\u0000b\r\nc\rd")).toBe("```text\nab\nc\nd\n```");
   });
 });

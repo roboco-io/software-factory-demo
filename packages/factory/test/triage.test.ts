@@ -1,10 +1,52 @@
 import { describe, expect, it } from "vitest";
 import { createFakeAdapter, loadFakeScript } from "../src/agents/fake";
 import { runPhase } from "../src/stages/phased";
+import { implementStage } from "../src/stages/implement";
 import { triageStage } from "../src/stages/triage";
 import { BOT, makeTestDeps } from "./helpers";
 
 describe("triage stage", () => {
+  it("triages bot-opened intake issues (source:*) and still needs @factory go to implement", async () => {
+    const pi = createFakeAdapter(loadFakeScript("triage-feature"), "pi");
+    const h = makeTestDeps({ adapters: { pi } });
+    const issue = h.gh.addIssue({
+      title: "[에러] Error: x",
+      author: BOT,
+      labels: ["source:error", "type:bug"],
+    });
+    await runPhase(triageStage, "all", h.deps, { issue: issue.number }, null);
+    expect(pi.calls).toHaveLength(1);
+    expect((await h.gh.getIssue(issue.number)).labels).toContain("factory:triaged");
+    expect(await implementStage.prepare(h.deps, { issue: issue.number })).toBeNull();
+    expect((await h.gh.getIssue(issue.number)).labels).not.toContain("factory:in-progress");
+  });
+
+  it.each(["source:feedback", "source:smoke"])("triages bot issues labeled %s", async (label) => {
+    const pi = createFakeAdapter(loadFakeScript("triage-feature"), "pi");
+    const h = makeTestDeps({ adapters: { pi } });
+    const issue = h.gh.addIssue({ title: "x", author: BOT, labels: [label] });
+    await runPhase(triageStage, "all", h.deps, { issue: issue.number }, null);
+    expect(pi.calls).toHaveLength(1);
+  });
+
+  it("keeps skipping bot issues without an intake source label", async () => {
+    const pi = createFakeAdapter([], "pi");
+    const h = makeTestDeps({ adapters: { pi } });
+    const deploy = h.gh.addIssue({ title: "d", author: BOT, labels: ["source:deploy"] });
+    const alert = h.gh.addIssue({ title: "a", author: BOT, labels: ["factory:alert"] });
+    await runPhase(triageStage, "all", h.deps, { issue: deploy.number }, null);
+    await runPhase(triageStage, "all", h.deps, { issue: alert.number }, null);
+    expect(pi.calls).toHaveLength(0);
+  });
+
+  it("does not let a human-opened issue with a source label bypass anything", async () => {
+    const pi = createFakeAdapter(loadFakeScript("triage-feature"), "pi");
+    const h = makeTestDeps({ adapters: { pi } });
+    const issue = h.gh.addIssue({ title: "h", author: "outsider", labels: ["source:error"] });
+    await runPhase(triageStage, "all", h.deps, { issue: issue.number }, null);
+    expect(pi.calls).toHaveLength(1);
+    expect(await implementStage.prepare(h.deps, { issue: issue.number })).toBeNull();
+  });
   it("comments the triage result, labels the type and moves new → triaged", async () => {
     const pi = createFakeAdapter(loadFakeScript("triage-feature"), "pi");
     const h = makeTestDeps({ adapters: { pi } });

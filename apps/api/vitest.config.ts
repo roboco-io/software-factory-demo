@@ -9,7 +9,11 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: "./wrangler.json" },
         miniflare: {
-          bindings: { TEST_MIGRATIONS: migrations, JWT_SECRET: "test-secret" },
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            JWT_SECRET: "test-secret",
+            INTAKE_TOKEN: "test-intake-token",
+          },
         },
       }),
     ],

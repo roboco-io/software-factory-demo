@@ -26,6 +26,9 @@ rules:
       - "scripts/**"
       - "tests/realworld/vendor/**"
       - "tests/realworld/UPSTREAM.txt"
+      # 프로덕션 스모크의 검사 기준은 구현 에이전트가 약하게 만들 수 없어야 한다.
+      - "tests/smoke/**"
+      - "apps/web/e2e-smoke/**"
   - tier: T2
     patterns:
       - "apps/api/src/auth/**"
@@ -39,6 +42,13 @@ rules:
       - "apps/api/src/routes/users.ts" # 로그인·회원가입
       - "apps/*/wrangler.*"
       - "**/.dev.vars"
+      # 수집 엔드포인트의 토큰 검사는 에러·피드백 데이터의 인증 경계다.
+      - "apps/api/src/middleware/intake.ts"
+      - "apps/api/src/routes/intake.ts"
+      # 에러 기록·피드백 수신·전역 오류 처리기는 공개 이슈로 흘러가는 데이터의 입구다.
+      - "apps/api/src/lib/error-events.ts"
+      - "apps/api/src/routes/feedback.ts"
+      - "apps/api/src/index.ts"
   - tier: T0
     patterns:
       - "docs/**"

@@ -91,6 +91,18 @@ describe("fix stage", () => {
     expect(claude.calls[0]?.prompt).toContain("unit, e2e");
   });
 
+  it("explains the evidence rule when the evidence check failed", async () => {
+    const claude = createFakeAdapter([write(3)], "claude");
+    const h = makeTestDeps({ adapters: { claude } });
+    const { pr } = await openBotPr(h);
+    h.gh.setChecks("sha-a", { unit: "success", evidence: "failure" });
+    await runPhase(fixStage, "all", h.deps, { pr, sha: "sha-a", reason: "ci" }, null);
+    expect(claude.calls[0]?.prompt).toContain("CI 필수 체크가 실패했다: evidence");
+    expect(claude.calls[0]?.prompt).toContain(
+      "재현 테스트(Vitest)가 수정 전(base) 코드에서 실패하고 PR 코드에서 통과해야",
+    );
+  });
+
   it("discards T3 changes and asks a human", async () => {
     const claude = createFakeAdapter(
       [{ writeFiles: { "packages/factory/src/x.ts": "x\n" } }],

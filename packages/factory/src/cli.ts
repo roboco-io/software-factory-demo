@@ -3,6 +3,14 @@ import { parseArgs } from "node:util";
 import { buildDeps } from "./main";
 import { runBootstrap } from "./stages/bootstrap";
 import { runCommand } from "./stages/command";
+import {
+  EvidencePlanSchema,
+  isSha40,
+  renderEvidenceText,
+  runEvidence,
+  runEvidencePlan,
+  type EvidencePlan,
+} from "./stages/evidence";
 import { runDeployFailed, runDeployed } from "./stages/deploy";
 import { fixStage } from "./stages/fix";
 import { runGate, runOnClosed } from "./stages/gate";
@@ -11,6 +19,8 @@ import { implementStage } from "./stages/implement";
 import type { StageDeps } from "./stages/deps";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
 import { reviewStage } from "./stages/review";
+import { createIntakeClient, runIntake } from "./stages/intake";
+import { normalizeSmokeResult, runSmokeReport } from "./stages/smoke";
 import { runRisk } from "./stages/risk";
 import { triageStage } from "./stages/triage";
 
@@ -18,6 +28,8 @@ export interface CliContext {
   env: NodeJS.ProcessEnv;
   buildDeps(env: NodeJS.ProcessEnv, phase: Phase): StageDeps;
   stdout(s: string): void;
+  // 테스트용. 없으면 전역 fetch를 쓴다.
+  fetch?: typeof fetch;
 }
 
 type Values = Record<string, string | boolean | undefined>;
@@ -38,6 +50,8 @@ const OPTIONS = {
   outcome: { type: "string" },
   json: { type: "boolean" },
   check: { type: "boolean" },
+  base: { type: "string" },
+  result: { type: "string" },
 } as const;
 
 const PHASES: readonly Phase[] = ["prepare", "agent", "publish", "all"];
@@ -62,6 +76,12 @@ function str(v: Values, name: string): string | null {
 function reqStr(v: Values, name: string): string {
   const s = str(v, name);
   if (!s) throw new UsageError(`--${name} <값>이 필요하다`);
+  return s;
+}
+
+function sha40(v: Values, name: string): string {
+  const s = reqStr(v, name);
+  if (!isSha40(s)) throw new UsageError(`--${name}는 40자리 소문자 16진수여야 한다`);
   return s;
 }
 
@@ -173,6 +193,57 @@ export const COMMANDS: Record<string, Handler> = {
     );
     return 0;
   },
+  evidence: async (ctx, v) => {
+    const plan = await runEvidencePlan(ctx.buildDeps(ctx.env, "all"), {
+      pr: num(v, "pr"),
+      headSha: sha40(v, "sha"),
+      baseSha: sha40(v, "base"),
+    });
+    ctx.stdout(
+      v.json === true
+        ? JSON.stringify(plan)
+        : `evidence ${plan.required ? "required" : "not required"}: ${plan.reason}`,
+    );
+    return 0;
+  },
+  "evidence-run": async (ctx, v) => {
+    // 계획은 다른 job이 넘긴 값이다. 형식이 틀리거나 없으면(evidence-plan job 실패) 통과시키지 않는다.
+    let plan: EvidencePlan;
+    try {
+      plan = EvidencePlanSchema.parse(JSON.parse(ctx.env.EVIDENCE_PLAN ?? ""));
+    } catch {
+      ctx.stdout(
+        "evidence 실패: EVIDENCE_PLAN(판정 계획)이 없거나 형식이 틀렸다. evidence-plan job 결과를 확인한다.",
+      );
+      return 1;
+    }
+    const result = await runEvidence(ctx.buildDeps(ctx.env, "agent"), plan);
+    ctx.stdout(v.json === true ? JSON.stringify(result) : renderEvidenceText(result));
+    return result.ok ? 0 : 1;
+  },
+  intake: async (ctx) => {
+    const url = ctx.env.INTAKE_URL ?? "";
+    const token = ctx.env.INTAKE_TOKEN ?? "";
+    // 토큰이 평문으로 나가지 않게 https만 허용한다. 테스트용 loopback만 http를 허용한다.
+    const secure =
+      /^https:\/\/\S+$/.test(url) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/\S*)?$/.test(url);
+    if (!secure || token.length === 0) {
+      throw new UsageError("INTAKE_URL(https://...)과 INTAKE_TOKEN 환경변수가 필요하다");
+    }
+    const summary = await runIntake(
+      ctx.buildDeps(ctx.env, "all"),
+      createIntakeClient(url, token, ctx.fetch),
+    );
+    ctx.stdout(JSON.stringify(summary));
+    return summary.failed > 0 ? 1 : 0;
+  },
+  // --result는 checks job 결과다. success 외의 값(failure·cancelled·skipped·timed_out)은 모두 실패로 본다.
+  "smoke-report": async (ctx, v) => {
+    const result = normalizeSmokeResult(reqStr(v, "result"));
+    if (result === null) throw new UsageError("--result <checks job 결과>가 필요하다");
+    ctx.stdout(JSON.stringify(await runSmokeReport(ctx.buildDeps(ctx.env, "all"), { result })));
+    return 0;
+  },
 };
 
 export async function main(argv: string[], ctx: CliContext): Promise<number> {
@@ -203,7 +274,7 @@ export async function main(argv: string[], ctx: CliContext): Promise<number> {
 }
 
 // 이후 Task에서 COMMANDS에 추가하는 핸들러가 쓰는 인자 헬퍼.
-export { optNum, reqStr, str, num };
+export { optNum, reqStr, str, num, sha40 };
 
 // 테스트에서 import할 때는 실행하지 않는다.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

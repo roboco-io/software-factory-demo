@@ -42,6 +42,8 @@ export interface ChangedFile {
   additionCount?: number;
   /** GitHub가 patch를 주지 않았다(바이너리 또는 큰 diff). */
   patchMissing?: boolean;
+  /** GitHub가 이 파일을 삭제(status "removed")로 보고했다. evidence는 삭제된 테스트를 실행 대상에서 뺀다. */
+  removed?: boolean;
 }
 
 /**

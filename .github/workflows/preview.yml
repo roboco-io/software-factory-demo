@@ -40,11 +40,10 @@ jobs:
           cache-dependency-path: base/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: base
-      # 첫 줄은 base에 팩토리 CLI가 아직 없는 P2 도입 PR만 해당한다. 판정이 실패하거나 PR head가 이벤트의 SHA에서 바뀌었으면 배포하지 않는다.
+      # 판정이 실패하거나 PR head가 이벤트의 SHA에서 바뀌었으면 배포하지 않는다.
       - id: risk
         working-directory: base
         run: |
-          if [ ! -f packages/factory/src/cli.ts ]; then echo "allowed=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           pnpm -s factory risk --pr "$PR" --sha "$HEAD_SHA" --json > "$RUNNER_TEMP/risk.json"
           jq -r '"allowed=\(.previewAllowed)", "stale=\(.stale)"' "$RUNNER_TEMP/risk.json" >> "$GITHUB_OUTPUT"
         env:

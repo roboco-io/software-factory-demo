@@ -3,6 +3,8 @@ import { runStructured, type TimedResult } from "../agents/budget";
 import { loadPrompt, renderPrompt } from "../agents/prompt";
 import type { Budget, EngineName } from "../agents/types";
 import { AssignmentError, assignEngines, resolveModel } from "../config/agents";
+import { TooManyFilesError } from "../github/port";
+import { classifyFiles } from "../policy/risk";
 import {
   ReviewSchema,
   findTriage,
@@ -23,6 +25,7 @@ import {
   runLink,
 } from "./common";
 import type { StageDeps } from "./deps";
+import { flattenFiles } from "./gate";
 import type { PhasedStage } from "./phased";
 import { clampResult } from "./protect";
 
@@ -71,6 +74,18 @@ const OutcomeSchema = z.object({
   result: TimedResultSchema,
   review: BoundedReviewSchema.nullable(),
 });
+
+// gate는 T2·T3 PR을 CI 직후 needs-human으로 옮긴다. 그 뒤에 끝난 리뷰도 사람 리뷰어가 볼 수 있게 판정만 남긴다(spec 7.1.1).
+// 변경 파일 목록을 끝까지 얻지 못하면 등급을 알 수 없으므로 T3로 본다.
+export async function heldForRisk(deps: StageDeps, pr: number): Promise<boolean> {
+  try {
+    const risk = classifyFiles(flattenFiles(await deps.gh.listPullFiles(pr)), deps.policy);
+    return risk.tier === "T2" || risk.tier === "T3";
+  } catch (e) {
+    if (e instanceof TooManyFilesError) return true;
+    throw e;
+  }
+}
 
 // 이미 실행 기록을 남긴 계획. publish 도중 예외가 나도 crashed()가 같은 런을 다시 세지 않게 한다.
 const RECORDED = new WeakSet<ReviewPlan>();
@@ -191,12 +206,17 @@ export const reviewStage: PhasedStage<{ pr: number }, ReviewPlan, ReviewOutcome>
   async publish(deps, plan, out) {
     await recordOnce(deps, plan, out);
     const { state } = await readState(deps.gh, plan.issue);
-    if (state !== "in-review") {
+    const held = state === "needs-human" && (await heldForRisk(deps, plan.pr));
+    if (state !== "in-review" && !held) {
       deps.log(`review: #${plan.issue} is ${state}; skipping verdict`);
       return;
     }
     const review = out.result.ok ? out.review : null;
     if (!review) {
+      if (held) {
+        deps.log(`review: PR #${plan.pr} is held for a human; no verdict to post`);
+        return;
+      }
       await moveTo(
         deps,
         plan.issue,
@@ -210,8 +230,8 @@ export const reviewStage: PhasedStage<{ pr: number }, ReviewPlan, ReviewOutcome>
     const pull = await deps.gh.getPull(plan.pr);
     if (pull.headSha !== plan.headSha || pull.state !== "open") {
       deps.log(`review: PR #${plan.pr} head moved to ${pull.headSha}; verdict dropped`);
-      // 새 head에는 판정이 없다. 이슈는 in-review로 남아 있으므로 새 head를 리뷰하도록 다시 보낸다.
-      if (pull.state === "open") {
+      // 새 head에는 판정이 없다. 이슈가 in-review로 남아 있으면 새 head를 리뷰하도록 다시 보낸다.
+      if (pull.state === "open" && !held) {
         await deps.gh.dispatchWorkflow("factory-review.yml", {
           pr: String(plan.pr),
           issue: String(plan.issue),
@@ -231,6 +251,11 @@ export const reviewStage: PhasedStage<{ pr: number }, ReviewPlan, ReviewOutcome>
       }),
       commitId: plan.headSha,
     });
+    if (held) {
+      // 사람이 병합을 결정하는 PR이다. 상태를 바꾸지 않고 fix·merge도 보내지 않는다.
+      deps.log(`review: verdict posted on held PR #${plan.pr}; #${plan.issue} stays needs-human`);
+      return;
+    }
     if (review.verdict === "REQUEST_CHANGES") {
       await deps.gh.dispatchWorkflow("factory-fix.yml", {
         pr: String(plan.pr),

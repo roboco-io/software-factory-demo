@@ -85,11 +85,8 @@ jobs:
           cache-dependency-path: base/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: base
-      # 첫 줄은 이 계획의 PR 자신(base에 팩토리 CLI가 아직 없음)만 해당한다.
       - working-directory: base
-        run: |
-          if [ ! -f packages/factory/src/cli.ts ]; then echo "base에 팩토리 CLI가 없다(P2 도입 PR). 판정을 건너뛴다."; exit 0; fi
-          pnpm -s factory risk --pr "$PR" --check
+        run: pnpm -s factory risk --pr "$PR" --check
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}

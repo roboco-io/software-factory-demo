@@ -1,4 +1,4 @@
-export type ErrorStatus = 401 | 403 | 404 | 409 | 422 | 501;
+export type ErrorStatus = 401 | 403 | 404 | 409 | 422 | 429 | 501;
 
 export class ApiError extends Error {
   constructor(
@@ -23,3 +23,11 @@ export const tokenMissing = () => one(401, "token", "is missing");
 export const tokenInvalid = () => one(401, "token", "is invalid");
 export const credentialsInvalid = () => one(401, "credentials", "invalid");
 export const notImplemented = (feature: string) => one(501, feature, "not implemented");
+
+export const tooLong = (field: string, max: number) =>
+  one(422, field, `is too long (maximum is ${max} characters)`);
+export const rateLimited = (field: string) => one(429, field, "too many requests");
+export const dailyLimited = (field: string) => one(429, field, "daily limit reached");
+
+// 알 수 없는 경로의 응답 본문. 수집 엔드포인트도 토큰이 틀리면 같은 본문을 돌려준다.
+export const ROUTE_NOT_FOUND = { errors: { route: ["not found"] } };

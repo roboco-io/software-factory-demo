@@ -182,6 +182,23 @@ describe("createOctokitPort listPullFiles", () => {
       { filename: "new.ts", previousFilename: "old.ts", additions: [], patchMissing: true },
     ]);
   });
+
+  it("marks files GitHub reports as removed", async () => {
+    const gh = port([
+      { method: "GET", path: /pulls\/5$/, status: 200, body: { changed_files: 1 } },
+      {
+        method: "GET",
+        path: /pulls\/5\/files$/,
+        status: 200,
+        body: [
+          { filename: "a.test.ts", status: "removed", additions: 0, patch: "@@ -1 +0,0 @@\n-x" },
+        ],
+      },
+    ]);
+    expect(await gh.listPullFiles(5)).toEqual([
+      { filename: "a.test.ts", additions: [], additionCount: 0, removed: true },
+    ]);
+  });
 });
 
 describe("createOctokitPort pagination and caps", () => {
@@ -210,6 +227,63 @@ describe("createOctokitPort pagination and caps", () => {
   }
   const mk = (pages: Parameters<typeof pagedFetch>[0]) =>
     createOctokitPort({ token: "t", owner: "o", repo: "r", fetch: pagedFetch(pages) });
+
+  it("follows Link headers for listClosedIssuesWithLabel and drops pull requests", async () => {
+    const issue = (number: number, pr = false) => ({
+      number,
+      title: "t",
+      body: null,
+      user: { login: "bot" },
+      labels: [{ name: "source:error" }],
+      state: "closed",
+      ...(pr ? { pull_request: {} } : {}),
+    });
+    const gh = mk({
+      "/repos/o/r/issues?page=1": {
+        body: [issue(1), issue(2, true)],
+        headers: link("/repos/o/r/issues", 2),
+      },
+      "/repos/o/r/issues?page=2": { body: [issue(3)] },
+    });
+    expect((await gh.listClosedIssuesWithLabel("source:error")).map((i) => i.number)).toEqual([
+      1, 3,
+    ]);
+  });
+
+  it("lists closed issues newest first and stops after 5 pages", async () => {
+    const urls: string[] = [];
+    const inner = pagedFetch(
+      Object.fromEntries(
+        [1, 2, 3, 4, 5, 6, 7].map((p) => [
+          `/repos/o/r/issues?page=${p}`,
+          {
+            body: [
+              {
+                number: p,
+                title: "t",
+                body: null,
+                user: { login: "bot" },
+                labels: [{ name: "source:error" }],
+                state: "closed",
+              },
+            ],
+            headers: link("/repos/o/r/issues", p + 1),
+          },
+        ]),
+      ),
+    );
+    const spy = ((input: string | URL | Request, init?: RequestInit) => {
+      urls.push(String(input instanceof Request ? input.url : input));
+      return inner(input, init);
+    }) as typeof fetch;
+    const gh = createOctokitPort({ token: "t", owner: "o", repo: "r", fetch: spy });
+    expect((await gh.listClosedIssuesWithLabel("source:error")).map((i) => i.number)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    expect(urls).toHaveLength(5);
+    expect(urls[0]).toContain("sort=created");
+    expect(urls[0]).toContain("direction=desc");
+  });
 
   it("follows Link headers for listPullFiles", async () => {
     const gh = mk({

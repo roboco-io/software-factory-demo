@@ -105,6 +105,23 @@ export function createOctokitPort(o: {
       });
       return data.filter((i) => !i.pull_request).map(toIssue);
     },
+    // 최신순으로 최대 5쪽(500건)까지만 읽는다. 오래된 회귀 후보는 놓칠 수 있지만 API 호출을 제한한다.
+    async listClosedIssuesWithLabel(label) {
+      const data: Awaited<ReturnType<typeof octokit.rest.issues.listForRepo>>["data"] = [];
+      let pages = 0;
+      for await (const res of octokit.paginate.iterator(octokit.rest.issues.listForRepo, {
+        ...base,
+        state: "closed",
+        labels: label,
+        sort: "created",
+        direction: "desc",
+        per_page: 100,
+      })) {
+        data.push(...res.data);
+        if (++pages >= 5) break;
+      }
+      return data.filter((i) => !i.pull_request).map(toIssue);
+    },
     async latestIssueWithLabel(label) {
       const { data } = await octokit.rest.issues.listForRepo({
         ...base,
@@ -199,6 +216,7 @@ export function createOctokitPort(o: {
         additions: addedLinesFromPatch(f.patch ?? ""),
         additionCount: f.additions,
         ...(f.patch === undefined ? { patchMissing: true } : {}),
+        ...(f.status === "removed" ? { removed: true } : {}),
       }));
     },
     async createPull(input) {

@@ -20,6 +20,8 @@ claude.local.md @serithemage
 /scripts/ @serithemage
 /tests/realworld/vendor/ @serithemage
 /tests/realworld/UPSTREAM.txt @serithemage
+/tests/smoke/ @serithemage
+/apps/web/e2e-smoke/ @serithemage
 
 # T2: 인증·마이그레이션·의존성·배포 설정
 /apps/api/src/auth/ @serithemage
@@ -32,6 +34,11 @@ claude.local.md @serithemage
 .dev.vars @serithemage
 package.json @serithemage
 /pnpm-*.yaml @serithemage
+/apps/api/src/middleware/intake.ts @serithemage
+/apps/api/src/routes/intake.ts @serithemage
+/apps/api/src/lib/error-events.ts @serithemage
+/apps/api/src/routes/feedback.ts @serithemage
+/apps/api/src/index.ts @serithemage
 
 # T2(default): 어떤 규칙에도 맞지 않는 루트 설정 파일
 /eslint.config.js @serithemage

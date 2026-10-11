@@ -27,11 +27,22 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
 - 이슈를 열면 트리아지 코멘트가 달린다. 리포 쓰기 권한자가 `@factory go`를 남기면 구현 → 교차 리뷰 → 체크 → 병합 → 배포가 진행된다. `@factory stop`은 진행 중인 run을 취소하고 사람에게 넘긴다.
 - 자동 병합은 위험 등급 T0·T1만 한다. T2·T3 PR은 CODEOWNERS 승인 후 사람이 병합한다.
 - 런 기록: `factory-data` 브랜치의 `runs/YYYY-MM.jsonl`. 실패율 차단기가 작동하면 리포 변수 `FACTORY_PAUSED`가 `true`가 되고 `factory:alert` 이슈가 열린다. 원인을 확인한 뒤 변수를 `false`로 바꾸면 재개한다.
-- 처음 설정: 시크릿 `FACTORY_APP_ID`, `FACTORY_APP_PRIVATE_KEY`, `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `DEEPSEEK_API_KEY`와 리포 변수 `FACTORY_BOT_USER_ID`, `CODEX_MODEL`(필수), `CLAUDE_MODEL`, `PI_MODEL`, `FACTORY_DAILY_LIMIT`, `FACTORY_PAUSED`를 둔다. 그다음 App 토큰을 `FACTORY_TOKEN`에 넣고 `pnpm -s factory bootstrap`을 한 번 실행해 라벨과 `factory-data` 브랜치를 만든다(다시 실행해도 결과가 같다).
+- 처음 설정: 시크릿 `FACTORY_APP_ID`, `FACTORY_APP_PRIVATE_KEY`, `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `DEEPSEEK_API_KEY`와 리포 변수 `FACTORY_BOT_USER_ID`, `CODEX_MODEL`(필수), `CLAUDE_MODEL`, `PI_MODEL`, `FACTORY_DAILY_LIMIT`, `FACTORY_PAUSED`를 둔다. 그다음 App 토큰을 `FACTORY_TOKEN`에 넣고 `pnpm -s factory bootstrap`을 한 번 실행해 라벨과 `factory-data` 브랜치를 만든다(다시 실행해도 결과가 같다). P3부터는 GitHub environment `production`에 secret `INTAKE_TOKEN`(임의의 64자 16진수)도 둔다. `deploy` 워크플로가 배포마다 같은 값을 Worker secret으로 넣는다.
 - prepare job이 이슈를 `factory:in-progress`로 옮긴 뒤 실패하면(agent·publish job이 돌지 않음) 이슈가 `factory:in-progress`에 남는다. `@factory retry`는 `in-progress` 상태에서는 거부되므로, 쓰기 권한자가 `@factory stop`을 남겨 `factory:needs-human`으로 옮긴 다음 `@factory retry`로 다시 시작한다. `guard` 워크플로는 이 상태를 자동으로 복구하지 않는다.
 - 연속 병합으로 대기 중이던 `deploy` run이 취소되면 그 커밋의 이슈가 `factory:merged`에 남는다. 이후 배포가 성공했는지 확인한 뒤 `pnpm -s factory deployed --sha <sha>`로 반영한다(`FACTORY_TOKEN` 필요).
 - 리뷰가 멈췄거나 리뷰 run이 취소되어 PR이 `factory:in-review`에 남으면 `gh workflow run factory-review.yml -f pr=<n> -f issue=<n>`으로 리뷰를 다시 시작한다(`<n>`은 각각 PR 번호와 이슈 번호).
-- 임시 조치: `ci.yml`의 `risk-tier` job과 `preview.yml`의 `policy` job은 base에 `packages/factory/src/cli.ts`가 없으면 판정을 건너뛴다(P2를 도입하는 PR 자체를 위한 예외). 첫 팩토리 PR이 main에 병합된 뒤 이 `[ ! -f packages/factory/src/cli.ts ]` 분기를 두 파일에서 제거한다. 제거하지 않으면 base에서 CLI가 사라져도 위험 등급 검사가 조용히 통과한다.
+
+## 유입과 증거(P3)
+
+- `evidence` 필수 체크: PR 본문의 팩토리 표식이 가리키는 이슈에 `type:bug` 라벨이 있으면, PR이 추가·수정한 테스트 파일만 base 커밋 트리에 덮어써 실행해 실패하고, head 트리에서 같은 테스트가 통과해야 한다. 그 밖의 PR은 즉시 통과한다. 실행 대상은 Vitest 파일(`*.test.ts`, `*.test.tsx`)이고, Playwright E2E(`apps/web/e2e/`)는 실행하지 않는다. 판정 코드는 base 커밋의 팩토리 CLI이며, PR 코드는 시크릿과 GitHub 토큰이 없는 `evidence` job에서만 실행된다.
+- 에러 유입: Worker가 처리하지 못한 예외는 `error_events` 테이블에 fingerprint(정규화한 메시지와 스택 상위 3프레임의 해시) 단위로 모인다. `factory-intake` 워크플로(매시 7분·37분)가 미확인 항목을 읽어 `source:error`·`type:bug` 이슈를 만들거나, 같은 fingerprint의 열린 이슈에 누적 횟수를 코멘트한다.
+- 피드백 유입: 웹 푸터의 "피드백" 버튼으로 익명 의견을 받는다. API는 IP 원문을 저장하지 않고 `SHA-256(IP + INTAKE_TOKEN)`만 저장하며, 같은 해시는 10분에 3건까지 받는다. 건마다 `source:feedback` 이슈가 된다.
+- 스모크 유입: `factory-smoke` 워크플로(6시간마다)가 프로덕션에 읽기 요청만 보낸다(Hurl `tests/smoke/readonly.hurl`, Playwright `apps/web/e2e-smoke/`). 실패하면 `source:smoke` 이슈를 만들거나 열린 이슈에 코멘트하고, 다음 성공 때 "복구됨" 코멘트를 남긴다. 이슈 종료는 사람이 정한다.
+- 유입 이슈는 자동으로 트리아지되지만, 구현은 리포 쓰기 권한자의 `@factory go`가 있어야 시작한다.
+- `INTAKE_TOKEN`: 원본은 GitHub environment `production`의 secret이다. 값을 바꾸려면 secret을 바꾼 뒤 `deploy` 워크플로를 다시 실행한다. 검증용 로컬 사본은 `~/.config/sfd/intake-token`(권한 600)에만 두고 터미널에 출력하지 않는다. 프리뷰 Worker에는 이 값을 넣지 않으므로 프리뷰의 수집 엔드포인트는 항상 404다.
+- 수동 실행: `gh workflow run factory-intake.yml`, `gh workflow run factory-smoke.yml`.
+- 스모크 실패 주입: `gh workflow run factory-smoke.yml -f api_base=https://sfd-api.roboco.workers.dev/api/__smoke_injected_failure`. 존재하지 않는 경로라 `/health`가 404가 된다. 입력 없이 다시 실행하면 복구를 확인할 수 있다. `api_base`는 프로덕션 API 주소 자신이나 그 하위 경로만 받는다. 다른 값을 주면 `target` job이 실패하고 스모크 검사와 이슈 기록은 실행되지 않는다.
+- 에러 주입: `POST /api/_factory/intake/probe`에 `Authorization: Bearer <INTAKE_TOKEN>`을 보내면 의도적 예외가 하나 기록된다. 토큰이 없거나 틀리면 다른 미지 경로와 같은 404다.
 
 ## 배포 롤백
 
@@ -64,3 +75,9 @@ Workflows 권한은 주지 않는다. 이 권한이 없으면 App 토큰으로�
 
 - agent job은 배정된 엔진의 키만 환경변수로 받는다. 그러나 job 정의가 참조하는 세 엔진 시크릿(`ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `DEEPSEEK_API_KEY`)은 마스킹 목록으로 모두 runner에 전달될 수 있다. runner에서 sudo 권한을 가진 에이전트 프로세스가 runner 프로세스 메모리를 읽으면 다른 엔진의 키를 얻을 수 있다.
 - agent job의 runner 프로세스에는 Actions 런타임 토큰(`ACTIONS_RUNTIME_TOKEN`)이 있다. 에이전트 프로세스의 env에는 이 토큰이 없지만, runner를 장악한 에이전트는 이 토큰으로 Actions 캐시(예: pnpm 저장소 캐시)에 오염된 항목을 쓸 수 있다. 이후 신뢰하는 job이 그 캐시를 복원하면 오염된 의존성이 실행될 수 있다. 계획 파일은 prepare job의 artifact ID로만 받으므로 artifact 교체로 계획을 바꿀 수는 없다.
+- `evidence` job은 PR 코드(테스트, 의존성 설치 스크립트)를 실행한다. 이 job에는 시크릿과 GitHub 토큰이 없지만, 판정 프로세스와 같은 VM에서 돌기 때문에 악의적인 PR 코드는 판정 결과를 조작할 수 있다. PR 코드를 실행하는 다른 필수 체크(`unit`, `e2e` 등)와 같은 수준이다. `evidence`는 재현 테스트가 있다는 증거를 요구하는 장치이고, 악의적인 작성자를 막는 장치가 아니다. T2·T3 변경은 계속 사람 승인이 막는다.
+- 피드백에는 IP별 한도(10분에 3건) 외에 전체 한도(하루 50건)도 있다. 두 한도는 삽입 문장 안에서 함께 검사되므로 동시 요청도 한도를 넘지 못한다. 그러나 IP를 바꿔 가며 보내는 스팸은 IP별 한도를 피할 수 있다. 이 위험은 수용했다. 전체 한도 때문에 피드백 이슈는 하루 최대 50개이고, 이슈마다 triage 실행이 한 번 일어나므로 하루 triage 실행은 약 50회로 제한된다.
+- `evidence` job이 읽는 증거 JSON 보고서는 PR의 테스트 코드가 쓸 수 있으므로 위조할 수 있다. 이 job에는 시크릿이 없고, 위조해도 얻는 것은 `evidence` 체크 통과뿐이다. 이 체크는 악의적인 작성자를 막는 장치가 아니므로 이 위험을 수용했다(판정 T3-c).
+- `INTAKE_TOKEN`은 GitHub `production` environment secret에 두고, 이 environment는 `main` 브랜치만 쓸 수 있도록 배포 브랜치 정책을 건다. main이 아닌 브랜치의 워크플로는 이 토큰을 읽지 못한다.
+- `POST /api/_factory/intake/probe`는 `INTAKE_TOKEN`을 가진 사람만 쓸 수 있는 오류 주입 경로다. 효과는 `error_events` 한 행과 그에 따른 유입 이슈뿐이다.
+- `factory-intake`는 environment `production`을 참조하므로, GitHub가 30분마다 이 environment의 배포 기록을 하나씩 만든다.
