@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import app from "../src/index";
 import { ipHash } from "../src/routes/feedback";
 import { api } from "./helpers";
 
@@ -12,6 +13,10 @@ const post = (body: unknown, ip?: string, headers: Record<string, string> = {}) 
 const valid = (text: string) => ({ feedback: { body: text, path: "/#/" } });
 
 describe("POST /api/feedback", () => {
+  afterEach(async () => {
+    await env.DB.prepare("DELETE FROM feedback").run();
+  });
+
   it("stores feedback with an IP hash only and answers the 4th request in 10 minutes with 429", async () => {
     for (let i = 0; i < 3; i++)
       expect((await post(valid(`fb ${i}`), "203.0.113.7")).status).toBe(201);
@@ -105,6 +110,61 @@ describe("POST /api/feedback", () => {
     const res = await post(valid("over cap"), "192.0.2.200");
     expect(res.status).toBe(429);
     expect(await res.json()).toEqual({ errors: { feedback: ["daily limit reached"] } });
-    await env.DB.prepare("DELETE FROM feedback").run();
+  });
+
+  it("rejects a streamed body over the cap without Content-Length", async () => {
+    const chunk = new TextEncoder().encode("x".repeat(4096));
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= 10) return controller.close();
+        sent += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    const res = await app.request(
+      "/api/feedback",
+      {
+        method: "POST",
+        body: stream,
+        headers: { "cf-connecting-ip": "192.0.2.60" },
+      },
+      env,
+    );
+    expect(res.status).toBe(422);
+    expect(sent).toBeLessThan(10);
+  });
+
+  it("rejects a non-numeric Content-Length", async () => {
+    const res = await post(valid("x"), "192.0.2.61", { "content-length": "abc" });
+    expect(res.status).toBe(422);
+  });
+
+  it("inserts exactly 3 rows for 8 parallel requests from one IP", async () => {
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => post(valid(`par ${i}`), "192.0.2.70")),
+    );
+    expect(results.filter((r) => r.status === 201)).toHaveLength(3);
+    expect(results.filter((r) => r.status === 429)).toHaveLength(5);
+    const hash = await ipHash("192.0.2.70", env.INTAKE_TOKEN);
+    const rows = await env.DB.prepare("SELECT id FROM feedback WHERE ip_hash = ?").bind(hash).all();
+    expect(rows.results).toHaveLength(3);
+  });
+
+  it("falls back to JWT_SECRET as the salt when INTAKE_TOKEN is absent", async () => {
+    const res = await app.request(
+      "/api/feedback",
+      {
+        method: "POST",
+        body: JSON.stringify(valid("no token")),
+        headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.80" },
+      },
+      { ...env, INTAKE_TOKEN: "" },
+    );
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare("SELECT ip_hash FROM feedback WHERE body = 'no token'").first<{
+      ip_hash: string;
+    }>();
+    expect(row?.ip_hash).toBe(await ipHash("192.0.2.80", env.JWT_SECRET));
   });
 });
