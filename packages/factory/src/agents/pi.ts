@@ -7,22 +7,28 @@ import { failedResult, type AgentAdapter, type AgentResult, type AgentTask } fro
 export const PI_READ_TOOLS = "read,ls,grep,find";
 export const PI_WRITE_TOOLS = "read,ls,grep,find,edit,write,bash";
 
+export const MAX_PROMPT_BYTES = 100_000;
+
+// "--" 뒤의 값은 옵션이 아니라 위치 인자이므로, "-"나 "@"로 시작하는 프롬프트도 옵션·파일로 해석되지 않는다.
 export function piArgs(task: AgentTask, model: string): string[] {
   return [
     "-p",
     "--mode",
     "json",
     "--no-session",
+    "--no-extensions",
     "--model",
     model,
     "--tools",
     task.readOnly ? PI_READ_TOOLS : PI_WRITE_TOOLS,
+    "--",
     task.prompt,
   ];
 }
 
 interface PiMessage {
   role?: string;
+  stopReason?: string;
   content?: unknown;
   usage?: { input?: number; output?: number; cost?: { total?: number } };
 }
@@ -30,12 +36,15 @@ interface PiMessage {
 interface PiEvent {
   type?: string;
   messages?: PiMessage[];
+  willRetry?: boolean;
   aborted?: boolean;
 }
 
 export interface PiParsed {
   ended: boolean;
   aborted: boolean;
+  willRetry: boolean;
+  stopReason?: string;
   text: string;
   turns: number;
   inputTokens: number;
@@ -56,6 +65,7 @@ function textOf(m: PiMessage | undefined): string {
 export function parsePiJsonl(stdout: string): PiParsed {
   let ended = false;
   let aborted = false;
+  let willRetry = false;
   let turns = 0;
   let messages: PiMessage[] = [];
   for (const line of stdout.split("\n")) {
@@ -71,6 +81,7 @@ export function parsePiJsonl(stdout: string): PiParsed {
     else if (ev.type === "agent_end") {
       ended = true;
       messages = ev.messages ?? [];
+      willRetry = ev.willRetry === true;
     } else if (ev.type === "agent_settled" && ev.aborted === true) aborted = true;
   }
   const assistant = messages.filter((m) => m.role === "assistant");
@@ -86,14 +97,17 @@ export function parsePiJsonl(stdout: string): PiParsed {
       hasCost = true;
     }
   }
+  const last = assistant.at(-1);
   const parsed: PiParsed = {
     ended,
     aborted,
-    text: textOf(assistant.at(-1)),
+    willRetry,
+    text: textOf(last),
     turns,
     inputTokens,
     outputTokens,
   };
+  if (last?.stopReason !== undefined) parsed.stopReason = last.stopReason;
   if (hasCost) parsed.costUsd = cost;
   return parsed;
 }
@@ -112,6 +126,9 @@ export function createPiAdapter(opts: {
   return {
     name: "pi",
     async run(task) {
+      if (Buffer.byteLength(task.prompt, "utf8") > MAX_PROMPT_BYTES) {
+        return failedResult(opts.model, "engine_error", "prompt too large for argv");
+      }
       let res: ProcessResult;
       try {
         const signal = task.signal;
@@ -128,8 +145,9 @@ export function createPiAdapter(opts: {
         );
       }
       const p = parsePiJsonl(res.stdout);
+      const badStop = p.stopReason === "error" || p.stopReason === "aborted";
       const result: AgentResult = {
-        ok: res.code === 0 && p.ended && !p.aborted,
+        ok: res.code === 0 && p.ended && !p.aborted && !p.willRetry && !badStop,
         summary: p.text,
         model: opts.model,
         turns: p.turns,
@@ -137,7 +155,7 @@ export function createPiAdapter(opts: {
       };
       if (p.costUsd !== undefined) result.costUsd = p.costUsd;
       if (!result.ok) {
-        result.failureReason = "engine_error";
+        result.failureReason = p.aborted || p.stopReason === "aborted" ? "timeout" : "engine_error";
         result.summary = (res.stderr.trim() || p.text || "pi: no agent_end event").slice(-2000);
       }
       return result;

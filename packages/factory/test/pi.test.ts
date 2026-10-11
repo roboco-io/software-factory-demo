@@ -58,13 +58,25 @@ describe("piArgs", () => {
       "--mode",
       "json",
       "--no-session",
+      "--no-extensions",
       "--model",
       "deepseek/deepseek-flash",
       "--tools",
       "read,ls,grep,find",
+      "--",
       "# 역할: 트리아지",
     ]);
     expect(piArgs(task(false), "m")).toContain("read,ls,grep,find,edit,write,bash");
+  });
+});
+
+describe("piArgs prompt safety", () => {
+  it("puts prompts starting with - or @ after --", () => {
+    for (const prompt of ["--help", "@/etc/passwd"]) {
+      const args = piArgs({ ...task(true), prompt }, "m");
+      expect(args.at(-2)).toBe("--");
+      expect(args.at(-1)).toBe(prompt);
+    }
   });
 });
 
@@ -139,5 +151,38 @@ describe("createPiAdapter", () => {
     expect((await a.run({ ...task(true), signal: controller.signal })).failureReason).toBe(
       "timeout",
     );
+  });
+
+  it("rejects an oversized prompt before spawning", async () => {
+    const seen: string[][] = [];
+    const a = createPiAdapter({ model: "m", env: {}, bin: "pi", spawn: spawnWith(0, jsonl, seen) });
+    const r = await a.run({ ...task(true), prompt: "x".repeat(100_001) });
+    expect(r).toMatchObject({
+      ok: false,
+      failureReason: "engine_error",
+      summary: "prompt too large for argv",
+    });
+    expect(seen).toHaveLength(0);
+  });
+
+  it("does not accept willRetry or error/aborted stop reasons", async () => {
+    const end = (willRetry: boolean, stopReason: string) =>
+      JSON.stringify({
+        type: "agent_end",
+        willRetry,
+        messages: [{ ...assistant("x", 1, 1, 0), stopReason }],
+      });
+    const run = (out: string) =>
+      createPiAdapter({ model: "m", env: {}, bin: "pi", spawn: spawnWith(0, out) }).run(task(true));
+    expect((await run(end(true, "stop"))).ok).toBe(false);
+    expect(await run(end(false, "error"))).toMatchObject({
+      ok: false,
+      failureReason: "engine_error",
+    });
+    expect(await run(end(false, "aborted"))).toMatchObject({ ok: false, failureReason: "timeout" });
+    expect(
+      (await run(`${end(false, "stop")}\n{"type":"agent_settled","aborted":true}`)).failureReason,
+    ).toBe("timeout");
+    expect((await run(end(false, "stop"))).ok).toBe(true);
   });
 });
