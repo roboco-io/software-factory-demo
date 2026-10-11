@@ -3,6 +3,7 @@ import { classifyFiles } from "../policy/risk";
 import { latestVerdict } from "../report/comments";
 import { signatureTrailers } from "../report/commit";
 import { parsePrMeta } from "../report/pr";
+import { addsSkipEntries } from "./risk";
 import { moveTo, readState, record, runLink, stepRecord } from "./common";
 import type { StageDeps } from "./deps";
 
@@ -60,6 +61,10 @@ export async function runGate(deps: StageDeps, args: GateArgs): Promise<GateDeci
   const pull = await findPull(deps, args);
   if (!pull || pull.state !== "open" || pull.draft || pull.author !== deps.settings.botLogin)
     return "ignored";
+  if (pull.baseRef !== "main") {
+    deps.log(`gate ignored PR #${pull.number}: base is ${pull.baseRef}, not main`);
+    return "ignored";
+  }
   const meta = parsePrMeta(pull.body);
   if (!meta) return "ignored";
   const { state } = await readState(deps.gh, meta.issue);
@@ -121,6 +126,18 @@ export async function runGate(deps: StageDeps, args: GateArgs): Promise<GateDeci
     return "needs-human";
   }
   const risk = classifyFiles(flattenFiles(files), deps.policy);
+  // 방어선 이중화: risk-tier 체크가 통과했더라도 skip.txt 우회는 여기서도 막는다(F21).
+  if (meta.role === "implement" && addsSkipEntries(files)) {
+    await moveTo(
+      deps,
+      meta.issue,
+      "needs-human",
+      "gate",
+      `PR #${pull.number}이 \`tests/realworld/skip.txt\`에 줄을 추가했거나 변경을 줄 단위로 확인할 수 없다. 자동 병합하지 않는다.${runLink(deps.settings)}`,
+    );
+    await record(deps, stepRecord("gate", meta.issue, pull.number, false, "skip_txt", meta.round));
+    return "needs-human";
+  }
   if (risk.tier === "T2" || risk.tier === "T3") {
     const deciding = risk.files
       .filter((f) => f.tier === risk.tier)
@@ -132,6 +149,17 @@ export async function runGate(deps: StageDeps, args: GateArgs): Promise<GateDeci
       "needs-human",
       "gate",
       `PR #${pull.number}은 위험 등급 ${risk.tier}이므로 자동 병합하지 않는다. CODEOWNERS(@serithemage)가 승인한 뒤 사람이 병합한다. 등급을 정한 파일: ${deciding}.`,
+    );
+    await record(
+      deps,
+      stepRecord(
+        "gate",
+        meta.issue,
+        pull.number,
+        false,
+        `risk_${risk.tier.toLowerCase()}`,
+        meta.round,
+      ),
     );
     return "needs-human";
   }
@@ -163,9 +191,21 @@ export async function runGate(deps: StageDeps, args: GateArgs): Promise<GateDeci
 
 export async function runOnClosed(deps: StageDeps, { pr }: { pr: number }): Promise<boolean> {
   const pull = await deps.gh.getPull(pr);
-  if (!pull.merged || pull.author !== deps.settings.botLogin) return false;
+  if (pull.author !== deps.settings.botLogin) return false;
   const meta = parsePrMeta(pull.body);
   if (!meta) return false;
+  if (!pull.merged) {
+    if (pull.state !== "closed") return false;
+    // 병합 없이 닫힌 봇 PR은 이슈가 in-review에 남지 않도록 사람에게 넘긴다.
+    await moveTo(
+      deps,
+      meta.issue,
+      "needs-human",
+      "gate",
+      `PR #${pr}이 병합 없이 닫혔다. 사람이 다시 진행할지 정한다.${runLink(deps.settings)}`,
+    );
+    return false;
+  }
   return moveTo(
     deps,
     meta.issue,

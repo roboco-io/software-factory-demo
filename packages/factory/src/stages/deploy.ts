@@ -5,6 +5,12 @@ import type { StageDeps } from "./deps";
 export async function runDeployed(deps: StageDeps, { sha }: { sha: string }): Promise<number[]> {
   const done: number[] = [];
   for (const issue of parseFactoryIssues(await deps.gh.getCommitMessage(sha))) {
+    // 이전 실행이 라벨만 바꾸고 닫기 전에 끝났다면 다시 실행할 때 닫는다.
+    const current = await deps.gh.getIssue(issue);
+    if (current.labels.includes("factory:deployed") && current.state === "open") {
+      await deps.gh.closeIssue(issue);
+      continue;
+    }
     const moved = await moveTo(
       deps,
       issue,

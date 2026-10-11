@@ -38,6 +38,10 @@ export interface ChangedFile {
   filename: string;
   previousFilename?: string;
   additions: string[];
+  /** API가 알려 준 추가 줄 수. patch가 잘리거나 없을 때 `additions`와 비교한다. */
+  additionCount?: number;
+  /** GitHub가 patch를 주지 않았다(바이너리 또는 큰 diff). */
+  patchMissing?: boolean;
 }
 
 /**

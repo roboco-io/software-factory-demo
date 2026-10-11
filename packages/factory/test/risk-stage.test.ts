@@ -84,4 +84,19 @@ describe("runRisk", () => {
     expect(r.forbidden).toHaveLength(1);
     expect((await h.gh.getPull(pr)).labels).toContain("risk:T3");
   });
+
+  it("forbids a skip.txt change whose patch GitHub omitted, but not a verified deletion (F21)", async () => {
+    const h = makeTestDeps();
+    const f = "tests/realworld/skip.txt";
+    const big = await openBotPr(h, {}, [
+      { filename: f, additions: [], additionCount: 3, patchMissing: true },
+    ]);
+    const truncated = await openBotPr(h, {}, [{ filename: f, additions: [], additionCount: 2 }]);
+    const del = await openBotPr(h, {}, [
+      { filename: f, additions: [], additionCount: 0, patchMissing: true },
+    ]);
+    expect((await runRisk(h.deps, { pr: big.pr, check: false })).forbidden).toEqual([f]);
+    expect((await runRisk(h.deps, { pr: truncated.pr, check: false })).forbidden).toEqual([f]);
+    expect((await runRisk(h.deps, { pr: del.pr, check: false })).forbidden).toEqual([]);
+  });
 });

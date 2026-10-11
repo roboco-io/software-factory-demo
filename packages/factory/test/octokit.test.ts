@@ -179,7 +179,7 @@ describe("createOctokitPort listPullFiles", () => {
     ]);
     expect(await gh.listPullFiles(4)).toEqual([
       { filename: "a.ts", additions: ["added one", "added two"] },
-      { filename: "new.ts", previousFilename: "old.ts", additions: [] },
+      { filename: "new.ts", previousFilename: "old.ts", additions: [], patchMissing: true },
     ]);
   });
 });
@@ -215,14 +215,14 @@ describe("createOctokitPort pagination and caps", () => {
     const gh = mk({
       "/repos/o/r/pulls/9?page=1": { body: { changed_files: 2 } },
       "/repos/o/r/pulls/9/files?page=1": {
-        body: [{ filename: "a.ts", patch: "@@ -0,0 +1 @@\n+x" }],
+        body: [{ filename: "a.ts", additions: 1, patch: "@@ -0,0 +1 @@\n+x" }],
         headers: link("/repos/o/r/pulls/9/files", 2),
       },
       "/repos/o/r/pulls/9/files?page=2": { body: [{ filename: "b.ts" }] },
     });
     expect(await gh.listPullFiles(9)).toEqual([
-      { filename: "a.ts", additions: ["x"] },
-      { filename: "b.ts", additions: [] },
+      { filename: "a.ts", additions: ["x"], additionCount: 1 },
+      { filename: "b.ts", additions: [], patchMissing: true },
     ]);
   });
 
@@ -264,12 +264,14 @@ describe("createOctokitPort pagination and caps", () => {
     await expect(gh.listPullFiles(9)).rejects.toBeInstanceOf(TooManyFilesError);
   });
 
-  it("maps a missing patch (binary or large diff) to empty additions", async () => {
+  it("maps a missing patch (binary or large diff) to empty additions with patchMissing", async () => {
     const gh = mk({
       "/repos/o/r/pulls/9?page=1": { body: { changed_files: 1 } },
       "/repos/o/r/pulls/9/files?page=1": { body: [{ filename: "img.png" }] },
     });
-    expect(await gh.listPullFiles(9)).toEqual([{ filename: "img.png", additions: [] }]);
+    expect(await gh.listPullFiles(9)).toEqual([
+      { filename: "img.png", additions: [], patchMissing: true },
+    ]);
   });
 
   it("treats 422 as a conflict only for sha problems, and 404 branch as BranchNotFoundError", async () => {

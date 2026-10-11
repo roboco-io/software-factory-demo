@@ -179,6 +179,8 @@ export function createOctokitPort(o: {
         filename: f.filename,
         ...(f.previous_filename ? { previousFilename: f.previous_filename } : {}),
         additions: addedLinesFromPatch(f.patch ?? ""),
+        additionCount: f.additions,
+        ...(f.patch === undefined ? { patchMissing: true } : {}),
       }));
     },
     async createPull(input) {

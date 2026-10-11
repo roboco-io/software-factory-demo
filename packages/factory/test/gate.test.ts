@@ -162,6 +162,39 @@ describe("runGate", () => {
     expect(h.gh.merges).toEqual([]);
   });
 
+  it("refuses a skip.txt change it cannot verify even if risk-tier passed (F21)", async () => {
+    const h = makeTestDeps();
+    const { pr } = await openBotPr(h, {}, [
+      { filename: "tests/realworld/skip.txt", additions: [], additionCount: 2, patchMissing: true },
+    ]);
+    h.gh.setChecks("sha-a", GREEN);
+    await verdict(h, pr, "sha-a", "APPROVE");
+    expect(await runGate(h.deps, { pr })).toBe("needs-human");
+    expect(h.gh.merges).toEqual([]);
+  });
+
+  it("records a run for the T2 hand-off", async () => {
+    const h = makeTestDeps();
+    const { pr } = await openBotPr(h, {}, ["apps/api/migrations/0002_x.sql"]);
+    h.gh.setChecks("sha-a", GREEN);
+    await runGate(h.deps, { pr });
+    expect((await h.deps.runs.since(new Date(0)))[0]).toMatchObject({
+      role: "gate",
+      ok: false,
+      failureReason: "risk_t2",
+    });
+  });
+
+  it("ignores PRs that do not target main", async () => {
+    const h = makeTestDeps();
+    const { pr } = await openBotPr(h);
+    h.gh.pulls.get(pr)!.baseRef = "release";
+    h.gh.setChecks("sha-a", GREEN);
+    await verdict(h, pr, "sha-a", "APPROVE");
+    expect(await runGate(h.deps, { pr })).toBe("ignored");
+    expect(h.gh.merges).toEqual([]);
+  });
+
   it("merges a green docs-only T0 PR without a verdict, but not over REQUEST_CHANGES", async () => {
     const h = makeTestDeps();
     const a = await openBotPr(h, {}, ["docs/guide.md"]);
@@ -203,5 +236,14 @@ describe("runOnClosed", () => {
     h.gh.humanMerge(pr, "m");
     expect(await runOnClosed(h.deps, { pr })).toBe(true);
     expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:merged"]);
+  });
+
+  it("sends the issue to a human when a bot PR is closed without merging", async () => {
+    const h = makeTestDeps();
+    const { pr, issue } = await openBotPr(h);
+    h.gh.pulls.get(pr)!.state = "closed";
+    expect(await runOnClosed(h.deps, { pr })).toBe(false);
+    expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:needs-human"]);
+    expect((await h.gh.listComments(issue))[0]?.body).toContain("병합 없이");
   });
 });

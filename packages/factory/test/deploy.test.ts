@@ -23,6 +23,16 @@ describe("deploy result", () => {
     });
   });
 
+  it("closes an issue that a crashed run left deployed but open", async () => {
+    const h = makeTestDeps();
+    const i = h.gh.addIssue({ title: "a", labels: ["factory:deployed"] });
+    h.gh.commitMessages.set("abc1234", `x\n\nFactory-Issue: #${i.number}`);
+    await runDeployed(h.deps, { sha: "abc1234" });
+    expect((await h.gh.getIssue(i.number)).state).toBe("closed");
+    await runDeployed(h.deps, { sha: "abc1234" });
+    expect((await h.gh.getIssue(i.number)).labels).toEqual(["factory:deployed"]);
+  });
+
   it("returns merged issues to a human with source:deploy when deploy or smoke failed", async () => {
     const h = makeTestDeps();
     const merged = h.gh.addIssue({ title: "a", labels: ["factory:merged"] });
