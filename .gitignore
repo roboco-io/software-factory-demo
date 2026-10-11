@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+playwright-report/
+test-results/
+apps/api/wrangler.preview.json
+.DS_Store
+.wrangler-dev.log

@@ -1,0 +1,23 @@
+{
+  "name": "api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "tsc -p tsconfig.json && tsc -p test/tsconfig.json",
+    "test": "vitest run",
+    "build:check": "wrangler deploy --dry-run --outdir dist"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.0",
+    "@cloudflare/workers-types": "^5.20261011.1",
+    "@types/node": "^26.6.5",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.149.0"
+  }
+}
