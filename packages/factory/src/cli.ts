@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { buildDeps } from "./main";
+import { runCommand } from "./stages/command";
 import type { StageDeps } from "./stages/deps";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
 import { triageStage } from "./stages/triage";
@@ -82,6 +83,15 @@ async function phased<A, P, O>(
 
 export const COMMANDS: Record<string, Handler> = {
   triage: (ctx, v) => phased(ctx, v, triageStage, { issue: num(v, "issue") }),
+  command: async (ctx, v) => {
+    const outcome = await runCommand(ctx.buildDeps(ctx.env, "all"), {
+      issue: num(v, "issue"),
+      actor: reqStr(v, "actor"),
+      body: ctx.env.COMMENT_BODY ?? "",
+    });
+    ctx.stdout(outcome);
+    return 0;
+  },
 };
 
 export async function main(argv: string[], ctx: CliContext): Promise<number> {

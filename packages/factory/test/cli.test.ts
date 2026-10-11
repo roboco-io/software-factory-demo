@@ -20,6 +20,17 @@ function context(
 }
 
 describe("cli main", () => {
+  it("runs the command stage with COMMENT_BODY from env", async () => {
+    const h = makeTestDeps();
+    const issue = h.gh.addIssue({ title: "t", labels: ["factory:triaged"] });
+    const out: string[] = [];
+    const ctx = { ...context(h, [], out), env: { COMMENT_BODY: "@factory go" } };
+    expect(
+      await main(["command", "--issue", String(issue.number), "--actor", "serithemage"], ctx),
+    ).toBe(0);
+    expect(out).toEqual(["approved"]);
+  });
+
   it("prints usage and returns 2 for an unknown command", async () => {
     const out: string[] = [];
     expect(await main(["nope"], context(makeTestDeps(), [], out))).toBe(2);
