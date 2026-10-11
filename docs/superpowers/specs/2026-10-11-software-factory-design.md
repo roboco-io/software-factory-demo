@@ -276,10 +276,10 @@ interface AgentAdapter {
 ### 6.1 API (`apps/api`)
 
 - Hono, Cloudflare Workers, D1, Drizzle ORM + drizzle-kit 마이그레이션.
-- 인증: JWT(HS256, Web Crypto), 비밀번호 PBKDF2-SHA256(Web Crypto, 반복 횟수는 Workers CPU 한도 안에서 측정해 결정). 시크릿 `JWT_SECRET`.
+- 인증: JWT(HS256, Web Crypto), 비밀번호 PBKDF2-SHA256(Web Crypto, 반복 100,000회(Workers Web Crypto의 PBKDF2 상한)). 시크릿 `JWT_SECRET`.
 - RealWorld 스펙(`specs/api/openapi.yml`)의 응답 형식·오류 형식(`{"errors": {...}}`)을 따른다.
 - P1 구현 범위: 사용자 등록·로그인·현재 사용자 조회·수정, 프로필 조회, 글 CRUD·목록(작성자 필터·페이지네이션), 댓글 CRUD.
-- 팩토리 데모용으로 남기는 범위(P1에서 미구현, 라우트는 501 반환): 프로필 팔로우/언팔로우, 글 즐겨찾기/해제, 태그 목록과 글의 태그 필터, 피드(`/articles/feed`).
+- 팩토리 데모용으로 남기는 범위: 프로필 팔로우/언팔로우, 글 즐겨찾기/해제, 태그 목록(`GET /api/tags`), 피드(`/articles/feed`). 글의 태그 저장과 `?tag=` 필터는 RealWorld `articles.hurl`이 검사하므로 P1에서 구현한다. 남긴 라우트는 인증(401) → 대상 확인(404) → 501 순서로 응답한다.
 - CORS: 프로덕션 웹 오리진과 프리뷰 오리진만 허용(`ALLOWED_ORIGINS` 변수).
 
 ### 6.2 웹 (`apps/web`)
@@ -293,11 +293,12 @@ interface AgentAdapter {
 
 | 대상 | 프로덕션(main 병합 시) | PR 프리뷰(같은 리포 브랜치 PR) |
 |---|---|---|
-| API | `wrangler d1 migrations apply sfd-prod --remote` → `wrangler deploy` (Worker `sfd-api`) | `wrangler d1 create sfd-pr-N` → 마이그레이션 + 시드 → `wrangler deploy --name sfd-api-pr-N`(D1 ID를 주입한 임시 설정 사용) |
+| API | `wrangler d1 migrations apply sfd-prod --remote` → `wrangler deploy` (Worker `sfd-api`) | `wrangler d1 create sfd-pr-N` → 마이그레이션 → `wrangler deploy --name sfd-api-pr-N`(D1 ID를 주입한 임시 설정 사용) |
 | 웹 | `gh-pages` 브랜치 루트에 빌드 결과 배포 | `rossjrw/pr-preview-action`으로 `gh-pages`의 `pr-preview/pr-N/`에 배포 |
 | 정리 | — | PR 종료 시 `wrangler delete --name sfd-api-pr-N`, `wrangler d1 delete sfd-pr-N -y`, 프리뷰 디렉토리 제거 |
 | 알림 | 배포 후 스모크 통과 시 이슈에 `factory:deployed` | 프리뷰 URL 2개를 PR 코멘트로 갱신 |
 
+- 확인된 URL(2026-10-11): 프론트 `https://roboco.io/software-factory-demo/`, API `https://sfd-api.roboco.workers.dev/api`.
 - Pages 소스는 "Deploy from a branch: `gh-pages`"로 설정한다. `pr-preview-action`이 "GitHub Actions" 소스를 지원하지 않기 때문이다.
 - 프로덕션 배포 워크플로가 `gh-pages` 루트를 덮어쓸 때 `pr-preview/` 디렉토리를 보존해야 한다(`peaceiris/actions-gh-pages`의 `keep_files` 또는 동등 방식).
 - 시크릿: `CLOUDFLARE_API_TOKEN`(Workers Scripts Edit, D1 Edit), `CLOUDFLARE_ACCOUNT_ID`, `JWT_SECRET`(Worker secret).
@@ -309,8 +310,8 @@ interface AgentAdapter {
 | `typecheck` | `tsc --noEmit` 전체 워크스페이스 | P1 |
 | `lint` | ESLint + Prettier check | P1 |
 | `unit` | Vitest. API는 `@cloudflare/vitest-pool-workers`, factory는 일반 Node | P1 |
-| `realworld-api` | 로컬 `wrangler dev`(로컬 D1)에 RealWorld 공식 Hurl 스위트 실행. 미구현 기능 테스트는 `tests/realworld/skip.txt`로 제외. 팩토리가 기능을 구현하면 skip 항목을 지우는 것이 수용 기준의 일부가 된다 | P1 |
-| `e2e` | Playwright 스모크(가입→글 작성→댓글)를 PR 프리뷰 URL에 실행 | P1 |
+| `realworld-api` | 로컬 `wrangler dev`(로컬 D1)에 RealWorld 공식 Hurl 스위트 실행. 미구현 기능 테스트는 `tests/realworld/skip.txt`로 제외. 팩토리가 기능을 구현하면 skip 항목을 지우는 것이 수용 기준의 일부가 된다. skip 대상: favorites, feed, profiles, tags | P1 |
+| `e2e` | Playwright 스모크(가입→글 작성→댓글)를 로컬 서버(wrangler dev + vite preview)에 실행. PR 프리뷰 대상 실행은 `e2e-preview`(필수 아님) | P1 |
 | `risk-tier` | 변경 경로로 등급 판정, `risk:T0-3` 라벨 부착, 구현 역할의 T3 수정 차단 | P2 |
 | `evidence` | 버그 PR: 변경·추가된 테스트를 base 커밋에서 실행해 실패, head에서 통과해야 함 | P3 |
 
@@ -375,5 +376,3 @@ RealWorld Hurl 스위트는 업스트림 리포의 특정 커밋을 고정(pin)�
 | CODEOWNERS 소유자 | `@serithemage` 개인인지 org 팀인지 | P2 착수 전 |
 | pi DeepSeek provider ID | 내장 provider 사용 가능 여부 | P2 첫 작업 |
 | Codex 리뷰 모델 ID | `CODEX_MODEL` 값 | P2 착수 전 |
-| 프론트 최종 URL | `roboco.io/software-factory-demo/` 동작 여부(CNAME 상속) | P1 배포 시 |
-| 비밀번호 해시 반복 횟수 | Workers CPU 한도 내 측정값 | P1 구현 중 |
