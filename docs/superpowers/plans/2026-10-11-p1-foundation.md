@@ -4093,3 +4093,4 @@ gh pr comment p1-spec-sync --body "P1 완료 조건 대조:
 - 필수 체크: main-protection ruleset"
 ```
 Expected: 6개 항목 모두 근거가 있다. 근거가 없는 항목은 완료로 보고하지 않는다.
+<!-- verify a -->
