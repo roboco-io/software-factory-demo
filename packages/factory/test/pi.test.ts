@@ -185,4 +185,15 @@ describe("createPiAdapter", () => {
     ).toBe("timeout");
     expect((await run(end(false, "stop"))).ok).toBe(true);
   });
+
+  it("mentions truncation when output was cut and agent_end is missing", async () => {
+    const spawn: SpawnFn = async () => ({
+      code: 0,
+      stdout: '{"type":"turn_end"}',
+      stderr: "",
+      truncated: { stdout: true },
+    });
+    const r = await createPiAdapter({ model: "m", env: {}, bin: "pi", spawn }).run(task(true));
+    expect(r.summary).toContain("output truncated");
+  });
 });

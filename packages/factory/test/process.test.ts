@@ -57,6 +57,27 @@ describe("runProcess", () => {
     fs.rmSync(pidFile);
   });
 
+  it("kills a grandchild that ignores SIGTERM after the leader exits on SIGTERM", async () => {
+    const controller = new AbortController();
+    const pidFile = path.join(os.tmpdir(), `ignore-term-${process.pid}-${Date.now()}`);
+    try {
+      const p = runProcess("sh", ["-c", `(trap "" TERM; sleep 30) & echo $! > ${pidFile}; wait`], {
+        cwd: process.cwd(),
+        env,
+        signal: controller.signal,
+      });
+      await vi.waitFor(() =>
+        expect(fs.existsSync(pidFile) && fs.readFileSync(pidFile, "utf8").trim()).toBeTruthy(),
+      );
+      const pid = Number(fs.readFileSync(pidFile, "utf8").trim());
+      controller.abort();
+      await expect(p).rejects.toThrow();
+      await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow());
+    } finally {
+      fs.rmSync(pidFile, { force: true });
+    }
+  });
+
   it("escalates to SIGKILL when the child ignores SIGTERM", async () => {
     const controller = new AbortController();
     const p = runProcess("sh", ["-c", 'trap "" TERM; sleep 30'], {

@@ -156,7 +156,10 @@ export function createPiAdapter(opts: {
       if (p.costUsd !== undefined) result.costUsd = p.costUsd;
       if (!result.ok) {
         result.failureReason = p.aborted || p.stopReason === "aborted" ? "timeout" : "engine_error";
-        result.summary = (res.stderr.trim() || p.text || "pi: no agent_end event").slice(-2000);
+        const fallback = res.truncated
+          ? "pi: output truncated, no agent_end event"
+          : "pi: no agent_end event";
+        result.summary = (res.stderr.trim() || p.text || fallback).slice(-2000);
       }
       return result;
     },

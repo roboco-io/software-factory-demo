@@ -103,11 +103,16 @@ export const runProcess: SpawnFn = (cmd, args, opts) =>
     // 중단된 자식에 stdin을 닫을 때 나는 EPIPE는 무시한다. 결과는 error/close 이벤트로 판단한다.
     child.stdin.on("error", () => undefined);
     // 중단 후에는 파이프를 붙잡고 있는 손자가 있어도 exit에서 정리한다.
+    // 리더가 SIGTERM에 종료해도 SIGTERM을 무시하는 손자가 남을 수 있으므로, 정리 전에 그룹에 SIGKILL을 보낸다.
+    const settleAborted = () => {
+      killGroup(child.pid, "SIGKILL");
+      finish(() => reject(new Error("The operation was aborted")));
+    };
     child.on("exit", () => {
-      if (aborted) finish(() => reject(new Error("The operation was aborted")));
+      if (aborted) settleAborted();
     });
     child.on("close", (code) => {
-      if (aborted) finish(() => reject(new Error("The operation was aborted")));
+      if (aborted) settleAborted();
       else
         finish(() =>
           resolve({
