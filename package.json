@@ -10,7 +10,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "test": "pnpm -r --if-present test"
+    "test": "pnpm -r --if-present test && node --test \"scripts/*.test.mjs\""
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

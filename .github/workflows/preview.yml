@@ -1,0 +1,93 @@
+name: preview
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+env:
+  PR: ${{ github.event.pull_request.number }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  API_URL: https://sfd-api-pr-${{ github.event.pull_request.number }}.${{ vars.WORKERS_SUBDOMAIN }}.workers.dev
+  WEB_PREVIEW_URL: ${{ vars.WEB_URL }}pr-preview/pr-${{ github.event.pull_request.number }}/
+jobs:
+  deploy:
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: preview
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Ensure PR database
+        working-directory: apps/api
+        run: |
+          id() { pnpm exec wrangler d1 list --json | jq -r --arg n "sfd-pr-$PR" '.[] | select(.name==$n) | .uuid'; }
+          DB_ID="$(id)"
+          if [ -z "$DB_ID" ]; then pnpm exec wrangler d1 create "sfd-pr-$PR"; DB_ID="$(id)"; fi
+          test -n "$DB_ID"
+          node ../../scripts/preview-config.mjs --pr "$PR" --db-id "$DB_ID"
+      - name: Migrate and deploy API
+        working-directory: apps/api
+        run: |
+          pnpm exec wrangler d1 migrations apply "sfd-pr-$PR" --remote -c wrangler.preview.json
+          pnpm exec wrangler deploy -c wrangler.preview.json
+          echo "${{ secrets.JWT_SECRET_PREVIEW }}" | pnpm exec wrangler secret put JWT_SECRET -c wrangler.preview.json
+      - name: Build web
+        run: pnpm --filter web build
+        env:
+          VITE_API_BASE: ${{ env.API_URL }}/api
+      - uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: apps/web/dist
+      - uses: marocchino/sticky-pull-request-comment@v3.0.5
+        with:
+          header: api-preview
+          message: |
+            **API preview:** ${{ env.API_URL }}/api/health
+            **Web preview:** ${{ env.WEB_PREVIEW_URL }}
+  e2e-preview:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Wait for Pages (최대 5분)
+        run: |
+          for i in $(seq 1 30); do curl -fsS "$WEB_PREVIEW_URL" | grep -q Conduit && exit 0; sleep 10; done
+          exit 1
+      - run: pnpm --filter web e2e
+        env:
+          E2E_BASE_URL: ${{ env.WEB_PREVIEW_URL }}
+  cleanup:
+    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: preview
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Delete preview Worker
+        run: |
+          curl -fsS -X DELETE \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/sfd-api-pr-$PR?force=true" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" || echo "worker already gone"
+      - name: Delete preview database
+        working-directory: apps/api
+        run: pnpm exec wrangler d1 delete "sfd-pr-$PR" -y || echo "database already gone"
+      - uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: apps/web/dist
+          action: remove

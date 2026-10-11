@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const external = process.env.E2E_BASE_URL;
+const raw = process.env.E2E_BASE_URL;
+const external = raw && !raw.endsWith("/") ? `${raw}/` : raw;
 const root = new URL("../..", import.meta.url).pathname;
 
 export default defineConfig({
