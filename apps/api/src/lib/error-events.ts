@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { errorEvents } from "../db/schema";
 import type { Env } from "../env";
@@ -6,7 +6,8 @@ import { sha256Hex } from "./hash";
 
 export const MESSAGE_MAX = 500;
 export const PATH_MAX = 200;
-// 공개 이슈 폭주를 막는 상한: 이만큼 쌓이면 새 fingerprint는 기록하지 않는다(기존 것은 계속 갱신).
+// 공개 이슈 폭주를 막는 상한: 미확인(acked_at이 없거나 last_seen보다 이전인) 행이 이만큼 쌓이면
+// 새 fingerprint는 기록하지 않는다. 확인된 행은 세지 않고, 기존 fingerprint는 항상 갱신한다.
 export const ERROR_EVENTS_CAP = 500;
 
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
@@ -72,6 +73,7 @@ export async function recordError(
       const total = await d
         .select({ c: sql<number>`count(*)` })
         .from(errorEvents)
+        .where(or(isNull(errorEvents.ackedAt), lt(errorEvents.ackedAt, errorEvents.lastSeen)))
         .get();
       if ((total?.c ?? 0) >= cap) return;
     }

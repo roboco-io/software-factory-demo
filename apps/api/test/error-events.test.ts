@@ -170,7 +170,11 @@ describe("recordError", () => {
   it("stops inserting new fingerprints at the cap but still upserts existing ones", async () => {
     expect(ERROR_EVENTS_CAP).toBe(500);
     const count = async () =>
-      (await env.DB.prepare("SELECT COUNT(*) AS c FROM error_events").first<{ c: number }>())!.c;
+      (
+        await env.DB.prepare(
+          "SELECT COUNT(*) AS c FROM error_events WHERE acked_at IS NULL OR acked_at < last_seen",
+        ).first<{ c: number }>()
+      )!.c;
     const existing = make("cap existing");
     await recordError(env, existing, "/p");
     const n = await count();
@@ -183,5 +187,24 @@ describe("recordError", () => {
     expect(row?.count).toBe(2);
     await recordError(env, make("cap brand new"), "/p", new Date(), n + 1);
     expect(await count()).toBe(n + 1);
+  });
+
+  it("counts only unacked rows toward the cap", async () => {
+    await recordError(env, make("cap acked seed"), "/p");
+    await env.DB.prepare("UPDATE error_events SET acked_at = last_seen").run();
+    const fresh = make("cap after ack");
+    await recordError(env, fresh, "/p", new Date(), 1);
+    const row = await env.DB.prepare("SELECT count FROM error_events WHERE fingerprint = ?")
+      .bind(await errorFingerprint(fresh))
+      .first<{ count: number }>();
+    expect(row?.count).toBe(1);
+    // 이제 미확인 행이 1개이므로 cap 1에서 또 다른 새 fingerprint는 막힌다.
+    const blocked = make("cap blocked");
+    await recordError(env, blocked, "/p", new Date(), 1);
+    expect(
+      await env.DB.prepare("SELECT 1 AS x FROM error_events WHERE fingerprint = ?")
+        .bind(await errorFingerprint(blocked))
+        .first(),
+    ).toBeNull();
   });
 });

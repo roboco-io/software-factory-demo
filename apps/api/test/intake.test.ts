@@ -152,7 +152,10 @@ describe("intake endpoints", () => {
     const ack = await api("/_factory/intake/ack", {
       method: "POST",
       headers: auth(),
-      body: { errors: [fp], feedback: [item.id] },
+      body: {
+        errors: [{ fingerprint: fp, lastSeen: list.errors.find((e) => e.fingerprint === fp)!.lastSeen }],
+        feedback: [item.id],
+      },
     });
     expect(await ack.json()).toEqual({ acked: { errors: 1, feedback: 1 } });
     const after = await pending();
@@ -160,6 +163,24 @@ describe("intake endpoints", () => {
     expect(after.feedback.map((f) => f.id)).not.toContain(item.id);
     await probeAndRecord();
     expect((await pending()).errors.find((e) => e.fingerprint === fp)?.count).toBe(before + 1);
+  });
+
+  it("keeps an error pending when it recurred after the client read it (ack carries the lastSeen it read)", async () => {
+    const { fingerprint: fp } = await probeAndRecord();
+    const read = (await pending()).errors.find((e) => e.fingerprint === fp)!;
+    const prior = await probeCount();
+    await new Promise((r) => setTimeout(r, 5));
+    await probe();
+    await probeRow(prior + 1);
+    const ack = await api("/_factory/intake/ack", {
+      method: "POST",
+      headers: auth(),
+      body: { errors: [{ fingerprint: fp, lastSeen: read.lastSeen }] },
+    });
+    expect(ack.status).toBe(200);
+    const again = (await pending()).errors.find((e) => e.fingerprint === fp);
+    expect(again?.count).toBe(prior + 1);
+    expect(again?.lastSeen > read.lastSeen).toBe(true);
   });
 
   it("returns at most 25 feedback items per call", async () => {
@@ -177,7 +198,16 @@ describe("intake endpoints", () => {
   it("rejects malformed ack bodies with 422 once the token is valid", async () => {
     for (const body of [
       { errors: ["XYZ"] },
-      { errors: Array.from({ length: 51 }, () => "0".repeat(16)) },
+      { errors: ["0".repeat(16)] },
+      { errors: [{ fingerprint: "XYZ", lastSeen: "2026-10-12T00:00:00.000Z" }] },
+      { errors: [{ fingerprint: "0".repeat(16) }] },
+      { errors: [{ fingerprint: "0".repeat(16), lastSeen: 5 }] },
+      {
+        errors: Array.from({ length: 51 }, () => ({
+          fingerprint: "0".repeat(16),
+          lastSeen: "2026-10-12T00:00:00.000Z",
+        })),
+      },
       { feedback: [0] },
       { feedback: ["1"] },
       [1],

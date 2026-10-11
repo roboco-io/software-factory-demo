@@ -1,4 +1,4 @@
-import { and, asc, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "../db/client";
 import { errorEvents, feedback } from "../db/schema";
@@ -14,13 +14,22 @@ const FINGERPRINT = /^[0-9a-f]{16}$/;
 // 미들웨어는 라우트마다 붙인다. 이 라우터는 "/"에 붙으므로 use("*")를 쓰면 모든 /api 경로에 걸린다.
 export const intakeRouter = new Hono<AppEnv>();
 
-function stringList(v: unknown): string[] | null {
+// 클라이언트가 목록에서 읽은 시점의 lastSeen을 함께 보낸다. 읽은 뒤 다시 발생한 에러는 ack되지 않고 남는다.
+interface ErrorAck {
+  fingerprint: string;
+  lastSeen: string;
+}
+function errorAckList(v: unknown): ErrorAck[] | null {
   if (v === undefined) return [];
   if (!Array.isArray(v) || v.length > ACK_MAX) return null;
-  const out: string[] = [];
+  const out: ErrorAck[] = [];
   for (const x of v) {
-    if (typeof x !== "string" || !FINGERPRINT.test(x)) return null;
-    out.push(x);
+    if (typeof x !== "object" || x === null || Array.isArray(x)) return null;
+    const fingerprint: unknown = Reflect.get(x, "fingerprint");
+    const lastSeen: unknown = Reflect.get(x, "lastSeen");
+    if (typeof fingerprint !== "string" || !FINGERPRINT.test(fingerprint)) return null;
+    if (typeof lastSeen !== "string" || lastSeen.length === 0 || lastSeen.length > 40) return null;
+    out.push({ fingerprint, lastSeen });
   }
   return out;
 }
@@ -71,17 +80,21 @@ intakeRouter.post("/_factory/intake/ack", requireIntakeToken, async (c) => {
     throw invalid("body");
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw invalid("body");
-  const fps = stringList("errors" in parsed ? parsed.errors : undefined);
+  const fps = errorAckList("errors" in parsed ? parsed.errors : undefined);
   if (fps === null) throw invalid("errors");
   const ids = idList("feedback" in parsed ? parsed.feedback : undefined);
   if (ids === null) throw invalid("feedback");
   const d = db(c.env);
   if (fps.length > 0) {
-    // ack 이후 다시 발생하면 last_seen이 acked_at보다 커져 목록에 다시 나온다.
-    await d
-      .update(errorEvents)
-      .set({ ackedAt: sql`${errorEvents.lastSeen}` })
-      .where(inArray(errorEvents.fingerprint, fps));
+    // 클라이언트가 읽은 lastSeen 이하인 행만 ack한다(acked_at = 읽은 lastSeen).
+    // 읽은 뒤 다시 발생해 last_seen이 더 커졌다면 acked_at < last_seen이라 목록에 다시 나온다.
+    // 문장마다 바인딩은 3개이고 최대 50문장이다.
+    for (const e of fps) {
+      await d
+        .update(errorEvents)
+        .set({ ackedAt: e.lastSeen })
+        .where(and(eq(errorEvents.fingerprint, e.fingerprint), lte(errorEvents.lastSeen, e.lastSeen)));
+    }
   }
   if (ids.length > 0) {
     await d
