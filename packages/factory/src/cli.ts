@@ -5,6 +5,7 @@ import { runCommand } from "./stages/command";
 import { runDeployFailed, runDeployed } from "./stages/deploy";
 import { fixStage } from "./stages/fix";
 import { runGate, runOnClosed } from "./stages/gate";
+import { runGuard } from "./stages/guard";
 import { implementStage } from "./stages/implement";
 import type { StageDeps } from "./stages/deps";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
@@ -142,6 +143,10 @@ export const COMMANDS: Record<string, Handler> = {
       ctx.stdout(`구현 역할 PR이 T3 경로를 바꿨다: ${report.forbidden.join(", ")}`);
       return 1;
     }
+    return 0;
+  },
+  guard: async (ctx) => {
+    ctx.stdout(JSON.stringify(await runGuard(ctx.buildDeps(ctx.env, "all"))));
     return 0;
   },
   deployed: async (ctx, v) => {
