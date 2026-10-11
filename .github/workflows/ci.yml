@@ -59,3 +59,37 @@ jobs:
       - if: failure()
         uses: actions/upload-artifact@v7
         with: { name: playwright-traces, path: apps/web/test-results, retention-days: 7 }
+  risk-tier:
+    # 브랜치 보호 필수 체크다. PR 브랜치의 packages/factory로 판정하면 봇 PR이 판정 코드를 고쳐
+    # T3 검사를 피할 수 있으므로, base 커밋을 별도 디렉토리(base)에 체크아웃해 그 코드와 정책으로 판정한다.
+    # 변경 파일 목록은 API로 읽으므로 PR 코드는 체크아웃하지 않는다.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          {
+            ref: "${{ github.event.pull_request.base.sha }}",
+            path: base,
+            persist-credentials: false,
+          }
+      - uses: pnpm/action-setup@v6
+        with: { package_json_file: base/package.json }
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: base/.nvmrc
+          cache: pnpm
+          cache-dependency-path: base/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: base
+      # 첫 줄은 이 계획의 PR 자신(base에 팩토리 CLI가 아직 없음)만 해당한다.
+      - working-directory: base
+        run: |
+          if [ ! -f packages/factory/src/cli.ts ]; then echo "base에 팩토리 CLI가 없다(P2 도입 PR). 판정을 건너뛴다."; exit 0; fi
+          pnpm -s factory risk --pr "$PR" --check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}

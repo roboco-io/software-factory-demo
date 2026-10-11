@@ -1,0 +1,17 @@
+# 역할별 엔진·모델·예산 기본값(spec 5.3). 모델 ID는 modelEnv 리포 변수로 덮어쓴다.
+# pricePerMTok는 USD/백만 토큰. null이면 엔진이 직접 알려 주는 추정치(claude total_cost_usd,
+# pi usage.cost.total)를 쓰고, 그것도 없으면 비용은 "추정 불가"로 기록한다.
+# codex 단가는 확인된 공식 값이 없어 null이다. 확인되면 이 파일에 넣는다(T3, 사람 승인).
+engines:
+  claude: { modelEnv: CLAUDE_MODEL, defaultModel: claude-sonnet-5-5, pricePerMTok: null }
+  codex: { modelEnv: CODEX_MODEL, defaultModel: null, pricePerMTok: null }
+  pi: { modelEnv: PI_MODEL, defaultModel: deepseek/deepseek-flash, pricePerMTok: null }
+roles:
+  triage: { engine: pi, budget: { maxTurns: 10, timeoutMin: 5, maxUsd: 0.2 } }
+  implement: { engine: claude, budget: { maxTurns: 80, timeoutMin: 30, maxUsd: 5 } }
+  fix: { engine: same-as-implement, budget: { maxTurns: 40, timeoutMin: 20, maxUsd: 3 } }
+  review:
+    engine: codex
+    fallbackOrder: [codex, claude, pi]
+    budget: { maxTurns: 30, timeoutMin: 15, maxUsd: 2 }
+  improve: { engine: claude, budget: { maxTurns: 60, timeoutMin: 30, maxUsd: 5 } }

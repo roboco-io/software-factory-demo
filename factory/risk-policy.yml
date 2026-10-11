@@ -1,0 +1,53 @@
+# 경로 → 위험 등급(spec 4.3). 파일마다 위에서부터 첫 번째로 일치하는 규칙의 등급을 쓴다.
+# 그래서 좁은 규칙(T3, T2)을 넓은 규칙(T0, T1)보다 위에 둔다.
+# PR 등급은 변경 파일 등급 중 가장 높은 값이다. 어떤 규칙에도 맞지 않는 파일은 default다.
+# T3 규칙의 패턴은 대소문자를 구분하지 않고 비교한다(macOS 같은 대소문자 무시 파일시스템에서 Agents.md가 AGENTS.md로 읽히는 우회를 막는다).
+# 이 파일을 바꾸면 .github/CODEOWNERS도 함께 바꾼다.
+default: T2
+requiredChecks: [typecheck, lint, unit, realworld-api, e2e, risk-tier]
+rules:
+  - tier: T3
+    patterns:
+      - ".github/**"
+      - "factory/**"
+      - "packages/factory/**"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      # 하위 디렉토리의 에이전트 지침 파일과 에이전트 설정 디렉토리도 T3이다(**/*.md의 T0보다 위).
+      - "**/AGENTS.md"
+      - "**/CLAUDE.md"
+      - "**/AGENTS.override.md"
+      - "**/CLAUDE.local.md"
+      - ".claude/**"
+      - ".agents/**"
+      - "**/.claude/**"
+      - "**/.agents/**"
+      # 게이트를 실행하는 스크립트와 고정된 공식 테스트는 바꾸면 검증을 우회할 수 있다.
+      - "scripts/**"
+      - "tests/realworld/vendor/**"
+      - "tests/realworld/UPSTREAM.txt"
+  - tier: T2
+    patterns:
+      - "apps/api/src/auth/**"
+      - "apps/api/src/middleware/auth.ts"
+      - "apps/api/src/lib/password.ts"
+      - "apps/api/src/lib/token.ts"
+      - "apps/api/migrations/**"
+      - "**/package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "apps/api/src/routes/users.ts" # 로그인·회원가입
+      - "apps/*/wrangler.*"
+      - "**/.dev.vars"
+  - tier: T0
+    patterns:
+      - "docs/**"
+      - "**/*.md"
+      - "apps/web/src/copy/**"
+  - tier: T1
+    patterns:
+      - "apps/**"
+      - "packages/**"
+      # skip.txt에서 구현한 기능의 줄을 지우는 것이 수용 기준이므로 tests/는 T1이다.
+      # 단, 봇 implement PR이 skip.txt에 줄을 추가하는 것은 Task 15 runRisk가 금지한다.
+      - "tests/**"

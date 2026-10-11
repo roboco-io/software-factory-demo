@@ -1,0 +1,103 @@
+import { z } from "zod";
+import type { Comment, Review } from "../github/port";
+import { TIERS } from "../policy/risk";
+import { cell, codeCell, inline, readMarker, sanitize, writeMarker } from "./text";
+
+export const TriageSchema = z.object({
+  type: z.enum(["feature", "bug", "docs", "feedback"]),
+  duplicateOf: z.number().int().positive().nullable(),
+  riskTier: z.enum(TIERS),
+  acceptanceCriteria: z.array(z.string().min(1)).min(1),
+  summary: z.string(),
+});
+export type Triage = z.infer<typeof TriageSchema>;
+
+export const ReviewSchema = z.object({
+  verdict: z.enum(["APPROVE", "REQUEST_CHANGES"]),
+  summary: z.string(),
+  findings: z.array(
+    z.object({
+      file: z.string(),
+      line: z.number().int().nullable(),
+      severity: z.enum(["blocker", "major", "minor"]),
+      message: z.string(),
+    }),
+  ),
+});
+export type ReviewOutput = z.infer<typeof ReviewSchema>;
+
+const VerdictSchema = z.object({
+  verdict: z.enum(["APPROVE", "REQUEST_CHANGES"]),
+  sha: z.string().min(1),
+});
+
+export interface Verdict {
+  verdict: "APPROVE" | "REQUEST_CHANGES";
+  sha: string;
+  body: string;
+}
+
+const TRIAGE_DATA = "factory:triage-data";
+const VERDICT = "factory:verdict";
+
+export function renderTriageComment(t: Triage, run: { engine: string; model: string }): string {
+  return [
+    "### 트리아지 결과",
+    "",
+    `- 분류: \`type:${t.type}\``,
+    `- 예상 위험 등급: **${t.riskTier}** (최종 등급은 PR의 변경 파일로 다시 판정한다)`,
+    `- 중복 후보: ${t.duplicateOf ? `#${t.duplicateOf}` : "없음"}`,
+    `- 요약: ${inline(t.summary)}`,
+    "",
+    "**수용 기준**",
+    "",
+    ...t.acceptanceCriteria.map((c) => `- [ ] ${inline(c)}`),
+    "",
+    `<sub>${run.engine}/${run.model}. 구현을 시작하려면 리포 쓰기 권한자가 \`@factory go\`를 코멘트로 남긴다.</sub>`,
+    writeMarker(TRIAGE_DATA, t),
+  ].join("\n");
+}
+
+export function findTriage(comments: Comment[], botLogin: string): Triage | null {
+  for (let i = comments.length - 1; i >= 0; i--) {
+    const c = comments[i]!;
+    if (c.author !== botLogin) continue;
+    const t = readMarker(c.body, TRIAGE_DATA, TriageSchema);
+    if (t) return t;
+  }
+  return null;
+}
+
+export function renderReviewBody(
+  r: ReviewOutput,
+  ctx: { sha: string; engine: string; model: string },
+): string {
+  const title = r.verdict === "APPROVE" ? "승인(APPROVE)" : "변경 요청(REQUEST_CHANGES)";
+  const rows = r.findings.map(
+    (f) =>
+      `| ${f.severity} | \`${codeCell(f.file)}${f.line ? `:${f.line}` : ""}\` | ${cell(f.message)} |`,
+  );
+  return [
+    `### 팩토리 교차 리뷰: ${title}`,
+    "",
+    `리뷰어 ${ctx.engine}/${ctx.model}, 대상 커밋 \`${ctx.sha.slice(0, 7)}\`. GitHub App은 자기가 연 PR을 승인할 수 없으므로, 판정은 이 코멘트 리뷰의 표식으로 기록하고 병합 판단(gate)이 읽는다.`,
+    "",
+    sanitize(r.summary),
+    "",
+    ...(rows.length > 0
+      ? ["| 심각도 | 위치 | 내용 |", "|---|---|---|", ...rows]
+      : ["지적 사항 없음."]),
+    "",
+    writeMarker(VERDICT, { verdict: r.verdict, sha: ctx.sha }),
+  ].join("\n");
+}
+
+export function latestVerdict(reviews: Review[], botLogin: string, sha: string): Verdict | null {
+  for (let i = reviews.length - 1; i >= 0; i--) {
+    const r = reviews[i]!;
+    if (r.author !== botLogin || r.state === "DISMISSED") continue;
+    const v = readMarker(r.body, VERDICT, VerdictSchema);
+    if (v && v.sha === sha && r.commitId === v.sha) return { ...v, body: r.body };
+  }
+  return null;
+}

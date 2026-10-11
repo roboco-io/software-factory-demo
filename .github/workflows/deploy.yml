@@ -67,3 +67,29 @@ jobs:
             sleep 10
           done
           exit 1
+  factory-report:
+    # 배포·스모크 결과를 해당 커밋의 팩토리 이슈에 반영한다. Cloudflare 시크릿과 environment는 쓰지 않는다.
+    # 연속 병합으로 대기 중이던 deploy run이 취소되면 그 커밋의 이슈는 merged에 남는다(README 런북 참고).
+    needs: [api, web, smoke]
+    if: ${{ !cancelled() && github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      - name: 팩토리 이슈에 배포 결과 반영
+        run: |
+          if [ "$SMOKE" = "success" ]; then pnpm -s factory deployed --sha "$GITHUB_SHA"; else pnpm -s factory deploy-failed --sha "$GITHUB_SHA"; fi
+        env:
+          FACTORY_TOKEN: ${{ steps.app.outputs.token }}
+          SMOKE: ${{ needs.smoke.result }}

@@ -13,10 +13,54 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
 ## 보안
 
 - CI의 Cloudflare 토큰(`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`)은 워크플로 전체가 아니라 wrangler 또는 Cloudflare API를 호출하는 단계에만 `env`로 전달한다. 의존성 설치, 웹 빌드, Playwright 단계는 이 토큰을 받지 않는다.
-- P1의 프리뷰와 프로덕션은 같은 토큰을 쓴다. P2에서 에이전트가 브랜치를 푸시하기 전에 두 가지를 먼저 도입해야 한다. 첫째, 프리뷰 전용 최소 권한 토큰이다. 둘째, `production` 환경에 한정한 프로덕션 시크릿이다.
+- Cloudflare 토큰은 `production`·`preview` environment 시크릿으로만 둔다. 팩토리 워크플로(`factory-*.yml`)는 Cloudflare 토큰을 받지 않는다. 봇 PR이 T2·T3 경로를 바꾸면 `preview.yml`의 `policy` job이 프리뷰 배포를 생략한다.
+- 팩토리의 에이전트는 GitHub 토큰이 없는 별도 job(VM)에서 실행되고, prepare job이 배정한 엔진의 API 키 하나만 받는다. push·PR·라벨은 에이전트가 실행된 적 없는 publish job이 새로 발급한 App 토큰으로 한다. publish job은 main을 체크아웃한 별도 디렉토리의 팩토리 CLI를 실행하고, 에이전트가 만든 작업 트리의 코드는 실행하지 않는다.
 
 ## 프리뷰 보안 한계
 
 - 프리뷰 웹은 프로덕션 웹과 같은 오리진(`https://roboco.io`)에서 서빙된다. 같은 오리진의 JavaScript는 `localStorage`를 읽을 수 있으므로, PR 코드가 다른 경로의 로그인 토큰을 읽을 수 있다.
 - 완화책으로 토큰 키를 API 주소별(`jwt:<API_BASE>`)로 나누고, 프리뷰 Worker마다 PR 번호에서 파생한 별도 `JWT_SECRET`을 쓴다. 프로덕션 토큰은 프리뷰 API에서 검증되지 않는다. 그러나 프리뷰 JS가 프로덕션 토큰을 읽는 것 자체는 막지 못한다.
 - 데모 범위에서 수용한 위험이다. 같은 리포 브랜치 PR만 프리뷰를 만들기 때문이다.
+
+## 소프트웨어 팩토리
+
+- 이슈를 열면 트리아지 코멘트가 달린다. 리포 쓰기 권한자가 `@factory go`를 남기면 구현 → 교차 리뷰 → 체크 → 병합 → 배포가 진행된다. `@factory stop`은 진행 중인 run을 취소하고 사람에게 넘긴다.
+- 자동 병합은 위험 등급 T0·T1만 한다. T2·T3 PR은 CODEOWNERS 승인 후 사람이 병합한다.
+- 런 기록: `factory-data` 브랜치의 `runs/YYYY-MM.jsonl`. 실패율 차단기가 작동하면 리포 변수 `FACTORY_PAUSED`가 `true`가 되고 `factory:alert` 이슈가 열린다. 원인을 확인한 뒤 변수를 `false`로 바꾸면 재개한다.
+- 처음 설정: 시크릿 `FACTORY_APP_ID`, `FACTORY_APP_PRIVATE_KEY`, `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `DEEPSEEK_API_KEY`와 리포 변수 `FACTORY_BOT_USER_ID`, `CODEX_MODEL`(필수), `CLAUDE_MODEL`, `PI_MODEL`, `FACTORY_DAILY_LIMIT`, `FACTORY_PAUSED`를 둔다. 그다음 App 토큰을 `FACTORY_TOKEN`에 넣고 `pnpm -s factory bootstrap`을 한 번 실행해 라벨과 `factory-data` 브랜치를 만든다(다시 실행해도 결과가 같다).
+- prepare job이 이슈를 `factory:in-progress`로 옮긴 뒤 실패하면(agent·publish job이 돌지 않음) 이슈가 `factory:in-progress`에 남는다. `@factory retry`는 `in-progress` 상태에서는 거부되므로, 쓰기 권한자가 `@factory stop`을 남겨 `factory:needs-human`으로 옮긴 다음 `@factory retry`로 다시 시작한다. `guard` 워크플로는 이 상태를 자동으로 복구하지 않는다.
+- 연속 병합으로 대기 중이던 `deploy` run이 취소되면 그 커밋의 이슈가 `factory:merged`에 남는다. 이후 배포가 성공했는지 확인한 뒤 `pnpm -s factory deployed --sha <sha>`로 반영한다(`FACTORY_TOKEN` 필요).
+- 리뷰가 멈췄거나 리뷰 run이 취소되어 PR이 `factory:in-review`에 남으면 `gh workflow run factory-review.yml -f pr=<n> -f issue=<n>`으로 리뷰를 다시 시작한다(`<n>`은 각각 PR 번호와 이슈 번호).
+- 임시 조치: `ci.yml`의 `risk-tier` job과 `preview.yml`의 `policy` job은 base에 `packages/factory/src/cli.ts`가 없으면 판정을 건너뛴다(P2를 도입하는 PR 자체를 위한 예외). 첫 팩토리 PR이 main에 병합된 뒤 이 `[ ! -f packages/factory/src/cli.ts ]` 분기를 두 파일에서 제거한다. 제거하지 않으면 base에서 CLI가 사라져도 위험 등급 검사가 조용히 통과한다.
+
+## 배포 롤백
+
+프로덕션 배포·스모크가 실패하면 해당 이슈가 `factory:needs-human` + `source:deploy`가 된다.
+
+1. 이전 Worker 버전을 확인한다: `cd apps/api && pnpm exec wrangler deployments list --name sfd-api`
+2. 이전 버전으로 되돌린다: `pnpm exec wrangler rollback <version-id> --name sfd-api -m "<사유>"`
+3. D1 마이그레이션은 자동으로 되돌리지 않는다. 되돌려야 하면 역방향 마이그레이션을 사람이 새로 작성해 PR로 병합한다.
+4. 웹은 문제 커밋을 revert하는 PR을 병합하면 `deploy` 워크플로가 다시 배포한다.
+
+## 팩토리 GitHub App 권한
+
+App `roboco-software-factory-bot`에는 다음 리포 권한만 준다.
+
+| 권한          | 수준           | 쓰는 곳                                                       |
+| ------------- | -------------- | ------------------------------------------------------------- |
+| Contents      | Read and write | `factory/issue-<N>` 브랜치 push, `factory-data` 런 기록, 병합 |
+| Issues        | Read and write | 상태 라벨, 코멘트, `factory:alert` 이슈                       |
+| Pull requests | Read and write | PR 생성, 리뷰 판정, 라벨                                      |
+| Actions       | Read and write | 다음 단계 workflow dispatch, `@factory stop`의 run 취소       |
+| Variables     | Read and write | 실패율 차단기가 `FACTORY_PAUSED`를 `true`로 바꿈              |
+| Checks        | Read           | 병합 판단에서 필수 체크 결과 확인                             |
+| Metadata      | Read           | 필수(기본)                                                    |
+
+Workflows 권한은 주지 않는다. 이 권한이 없으면 App 토큰으로는 `.github/workflows/**`를 바꾸는 커밋을 push할 수 없다. 그래서 구현 역할의 T3 경로 금지(`risk-tier`, publish 검증)가 뚫리더라도 봇이 자기 워크플로를 고쳐 토큰·시크릿 처리 방식을 바꿀 수 없다. 워크플로 변경은 사람이 직접 커밋하고 병합한다.
+
+## 팩토리 보안 한계
+
+다음 위험은 데모 범위에서 수용했다.
+
+- agent job은 배정된 엔진의 키만 환경변수로 받는다. 그러나 job 정의가 참조하는 세 엔진 시크릿(`ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `DEEPSEEK_API_KEY`)은 마스킹 목록으로 모두 runner에 전달될 수 있다. runner에서 sudo 권한을 가진 에이전트 프로세스가 runner 프로세스 메모리를 읽으면 다른 엔진의 키를 얻을 수 있다.
+- agent job의 runner 프로세스에는 Actions 런타임 토큰(`ACTIONS_RUNTIME_TOKEN`)이 있다. 에이전트 프로세스의 env에는 이 토큰이 없지만, runner를 장악한 에이전트는 이 토큰으로 Actions 캐시(예: pnpm 저장소 캐시)에 오염된 항목을 쓸 수 있다. 이후 신뢰하는 job이 그 캐시를 복원하면 오염된 의존성이 실행될 수 있다. 계획 파일은 prepare job의 artifact ID로만 받으므로 artifact 교체로 계획을 바꿀 수는 없다.

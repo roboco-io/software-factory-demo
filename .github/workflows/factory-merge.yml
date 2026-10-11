@@ -1,0 +1,62 @@
+name: factory-merge
+run-name: factory-merge ${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref || inputs.pr }}
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr: { description: PR 번호, required: true, type: string }
+  pull_request:
+    types: [closed]
+permissions:
+  contents: read
+jobs:
+  gate:
+    # check_suite 이벤트는 GitHub Actions가 만든 suite에 대해 워크플로를 트리거하지 않는다. ci 완료는 workflow_run으로 받는다.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && startsWith(github.event.workflow_run.head_branch, 'factory/'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      # workflow_run과 dispatch가 같은 PR에 대해 같은 그룹을 쓰게 PR 번호로 묶는다.
+      group: factory-gate-${{ github.event.workflow_run.pull_requests[0].number || inputs.pr }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: main, persist-credentials: false }
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      - run: |
+          if [ -n "$PR" ]; then pnpm -s factory gate --pr "$PR"; else pnpm -s factory gate --branch "$BRANCH"; fi
+        env:
+          FACTORY_TOKEN: ${{ steps.app.outputs.token }}
+          FACTORY_BOT_USER_ID: ${{ vars.FACTORY_BOT_USER_ID }}
+          PR: ${{ inputs.pr }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+  closed:
+    if: github.event_name == 'pull_request' && startsWith(github.event.pull_request.head.ref, 'factory/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: main, persist-credentials: false }
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      - run: pnpm -s factory on-closed --pr "$PR"
+        env:
+          FACTORY_TOKEN: ${{ steps.app.outputs.token }}
+          PR: ${{ github.event.pull_request.number }}
