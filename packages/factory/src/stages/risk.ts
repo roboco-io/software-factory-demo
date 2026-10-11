@@ -63,9 +63,14 @@ export async function runRisk(
   const previewAllowed = !stale && !(botAuthor && (risk.tier === "T2" || risk.tier === "T3"));
   if (args.check) {
     const wanted = `risk:${risk.tier}`;
-    for (const l of pull.labels)
-      if (/^risk:T[0-3]$/.test(l) && l !== wanted) await deps.gh.removeLabel(args.pr, l);
-    if (!pull.labels.includes(wanted)) await deps.gh.addLabels(args.pr, [wanted]);
+    try {
+      for (const l of pull.labels)
+        if (/^risk:T[0-3]$/.test(l) && l !== wanted) await deps.gh.removeLabel(args.pr, l);
+      if (!pull.labels.includes(wanted)) await deps.gh.addLabels(args.pr, [wanted]);
+    } catch (e) {
+      // fork PR의 GITHUB_TOKEN은 읽기 전용이라 라벨 쓰기가 403이다. 라벨은 표시용이고 check의 판정은 forbidden만 쓴다.
+      if ((e as { status?: number }).status !== 403) throw e;
+    }
   }
   return {
     pr: args.pr,

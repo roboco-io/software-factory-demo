@@ -132,6 +132,9 @@ export const COMMANDS: Record<string, Handler> = {
   },
   risk: async (ctx, v) => {
     const sha = str(v, "sha");
+    if (typeof v.sha === "string" && !/^[0-9a-f]{40}$/.test(v.sha)) {
+      throw new UsageError("--sha는 40자리 소문자 16진수여야 한다");
+    }
     const report = await runRisk(ctx.buildDeps(ctx.env, "all"), {
       pr: num(v, "pr"),
       check: v.check === true,

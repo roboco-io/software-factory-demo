@@ -44,6 +44,16 @@ describe("cli main", () => {
     expect(out.join("\n")).toContain("--issue");
   });
 
+  it("validates risk --sha as a 40-hex SHA when provided", async () => {
+    const h = makeTestDeps();
+    const out: string[] = [];
+    for (const sha of ["", "abc", "G".repeat(40), "A".repeat(40)]) {
+      out.length = 0;
+      expect(await main(["risk", "--pr", "1", "--sha", sha], context(h, [], out))).toBe(2);
+      expect(out.join("\n")).toContain("--sha");
+    }
+  });
+
   it("runs triage in the requested phase", async () => {
     const h = makeTestDeps({
       adapters: { pi: createFakeAdapter(loadFakeScript("triage-feature"), "pi") },

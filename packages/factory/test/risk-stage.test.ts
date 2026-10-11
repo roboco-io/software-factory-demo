@@ -66,6 +66,26 @@ describe("runRisk", () => {
     expect((await h.gh.getPull(pr)).labels).toEqual(["factory:round-1", "risk:T1"]);
   });
 
+  it("does not fail --check when the label write is forbidden (fork PR, read-only token)", async () => {
+    const h = makeTestDeps();
+    const { pr } = await openBotPr(h);
+    vi.spyOn(h.gh, "addLabels").mockRejectedValue(
+      Object.assign(new Error("Resource not accessible by integration"), { status: 403 }),
+    );
+    const r = await runRisk(h.deps, { pr, check: true });
+    expect(r.tier).toBe("T1");
+    expect(r.forbidden).toEqual([]);
+  });
+
+  it("still throws on non-403 label write errors", async () => {
+    const h = makeTestDeps();
+    const { pr } = await openBotPr(h);
+    vi.spyOn(h.gh, "addLabels").mockRejectedValue(
+      Object.assign(new Error("boom"), { status: 500 }),
+    );
+    await expect(runRisk(h.deps, { pr, check: true })).rejects.toThrow("boom");
+  });
+
   it("forbids lines added to skip.txt in a bot implement PR but allows deleting lines (F21)", async () => {
     const h = makeTestDeps();
     const add = await openBotPr(h, {}, [
