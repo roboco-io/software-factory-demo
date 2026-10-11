@@ -4,7 +4,7 @@ import type { GitHubPort } from "./port";
 export function forbiddenGitHub(reason: string): GitHubPort {
   return new Proxy({} as GitHubPort, {
     get(_target, prop) {
-      if (prop === "then") return undefined;
+      if (typeof prop === "symbol" || prop === "then" || prop === "toJSON") return undefined;
       return () => Promise.reject(new Error(`GitHub API 호출 거부(${String(prop)}): ${reason}`));
     },
   });

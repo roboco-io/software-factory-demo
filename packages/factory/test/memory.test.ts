@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { forbiddenGitHub } from "../src/github/forbidden";
 import { InMemoryGitHub } from "../src/github/memory";
-import { ConflictError } from "../src/github/port";
+import { BranchNotFoundError, ConflictError } from "../src/github/port";
 
 const BOT = "roboco-software-factory-bot[bot]";
 
@@ -47,6 +47,7 @@ describe("InMemoryGitHub", () => {
 
   it("enforces sha on writeFile and can inject conflicts", async () => {
     const gh = new InMemoryGitHub({ botLogin: BOT });
+    await gh.createOrphanBranch("d", {}, "init");
     await gh.writeFile("d", "f", "1", null, "m");
     const cur = await gh.readFile("d", "f");
     await expect(gh.writeFile("d", "f", "2", "wrong", "m")).rejects.toBeInstanceOf(ConflictError);
@@ -57,10 +58,21 @@ describe("InMemoryGitHub", () => {
   });
 });
 
+describe("InMemoryGitHub missing branch", () => {
+  it("throws BranchNotFoundError when writing to a branch that does not exist", async () => {
+    const gh = new InMemoryGitHub({ botLogin: BOT });
+    await expect(gh.writeFile("nope", "f", "1", null, "m")).rejects.toBeInstanceOf(
+      BranchNotFoundError,
+    );
+  });
+});
+
 describe("forbiddenGitHub", () => {
   it("rejects every call with the reason and is not thenable", async () => {
     const gh = forbiddenGitHub("agent 단계");
     await expect(gh.getIssue(1)).rejects.toThrow(/getIssue.*agent 단계/);
     expect((gh as unknown as { then?: unknown }).then).toBeUndefined();
+    expect((gh as unknown as { toJSON?: unknown }).toJSON).toBeUndefined();
+    expect((gh as unknown as Record<symbol, unknown>)[Symbol.iterator]).toBeUndefined();
   });
 });

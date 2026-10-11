@@ -36,8 +36,19 @@ describe("run store on factory-data", () => {
     expect(monthPath(new Date("2026-11-01T00:00:00+09:00"))).toBe("runs/2026-10.jsonl");
   });
 
+  it("creates factory-data on first append when the branch is missing", async () => {
+    const gh = new InMemoryGitHub({ botLogin: "bot" });
+    const runs = createRunStore(gh);
+    await runs.append(rec("2026-10-11T03:00:00Z"));
+    expect(gh.branches.has(DATA_BRANCH)).toBe(true);
+    expect(
+      (await gh.readFile(DATA_BRANCH, "runs/2026-10.jsonl"))?.content.trim().split("\n"),
+    ).toHaveLength(1);
+  });
+
   it("retries up to 3 times after conflicts, then gives up", async () => {
     const gh = new InMemoryGitHub({ botLogin: "bot" });
+    await gh.createOrphanBranch(DATA_BRANCH, {}, "init");
     const runs = createRunStore(gh);
     gh.injectConflicts = 3;
     await runs.append(rec("2026-10-11T03:00:00Z"));
@@ -50,6 +61,7 @@ describe("run store on factory-data", () => {
 
   it("reads across months, filters by time and skips broken lines", async () => {
     const gh = new InMemoryGitHub({ botLogin: "bot" });
+    await gh.createOrphanBranch(DATA_BRANCH, {}, "init");
     await gh.writeFile(
       DATA_BRANCH,
       "runs/2026-09.jsonl",

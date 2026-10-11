@@ -1,5 +1,5 @@
 import type { Role } from "../agents/types";
-import { ConflictError, type GitHubPort } from "../github/port";
+import { BranchNotFoundError, ConflictError, type GitHubPort } from "../github/port";
 
 export type RunRole = Role | "command" | "gate" | "deploy";
 
@@ -67,6 +67,7 @@ export function createRunStore(gh: GitHubPort, now: () => Date = () => new Date(
   return {
     async append(record) {
       const file = monthPath(new Date(record.ts));
+      let created = false;
       for (let attempt = 1; ; attempt++) {
         const cur = await gh.readFile(DATA_BRANCH, file);
         const prev = cur?.content ?? "";
@@ -81,6 +82,16 @@ export function createRunStore(gh: GitHubPort, now: () => Date = () => new Date(
           );
           return;
         } catch (e) {
+          if (e instanceof BranchNotFoundError && !created) {
+            created = true;
+            await gh.createOrphanBranch(
+              DATA_BRANCH,
+              { "README.md": "factory run records\n" },
+              "init factory-data",
+            );
+            attempt--;
+            continue;
+          }
           if (!(e instanceof ConflictError) || attempt >= MAX_APPEND_ATTEMPTS) throw e;
         }
       }

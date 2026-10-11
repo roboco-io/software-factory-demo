@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { createOctokitPort } from "../src/github/octokit";
-import { ConflictError } from "../src/github/port";
+import { BranchNotFoundError, ConflictError, TooManyFilesError } from "../src/github/port";
 
 type Route = { method: string; path: RegExp; status: number; body: unknown };
+
+// Response objects built by hand have an empty url; Octokit pagination reads response.url.
+function withUrl(res: Response, url: URL): Response {
+  Object.defineProperty(res, "url", { value: url.href });
+  return res;
+}
 
 function fakeFetch(routes: Route[], calls: string[] = []): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
@@ -15,10 +21,13 @@ function fakeFetch(routes: Route[], calls: string[] = []): typeof fetch {
       (r) => r.method === method && r.path.test(decodeURIComponent(url.pathname)),
     );
     if (!route) return new Response(JSON.stringify({ message: "no route" }), { status: 500 });
-    return new Response(route.status === 204 ? null : JSON.stringify(route.body), {
-      status: route.status,
-      headers: { "content-type": "application/json" },
-    });
+    return withUrl(
+      new Response(route.status === 204 ? null : JSON.stringify(route.body), {
+        status: route.status,
+        headers: { "content-type": "application/json" },
+      }),
+      url,
+    );
   }) as typeof fetch;
 }
 
@@ -123,6 +132,7 @@ describe("createOctokitPort", () => {
 describe("createOctokitPort listPullFiles", () => {
   it("fills additions from the patch and previousFilename from previous_filename", async () => {
     const gh = port([
+      { method: "GET", path: /pulls\/4$/, status: 200, body: { changed_files: 2 } },
       {
         method: "GET",
         path: /pulls\/4\/files$/,
@@ -141,5 +151,125 @@ describe("createOctokitPort listPullFiles", () => {
       { filename: "a.ts", additions: ["added one", "added two"] },
       { filename: "new.ts", previousFilename: "old.ts", additions: [] },
     ]);
+  });
+});
+
+describe("createOctokitPort pagination and caps", () => {
+  const link = (path: string, page: number) => ({
+    link: `<https://api.github.com${path}?per_page=100&page=${page}>; rel="next"`,
+  });
+
+  function pagedFetch(
+    pages: Record<string, { body: unknown; headers?: Record<string, string> }>,
+  ): typeof fetch {
+    return (async (input: string | URL | Request) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      );
+      const key = `${url.pathname}?page=${url.searchParams.get("page") ?? "1"}`;
+      const p = pages[key];
+      if (!p) return new Response(JSON.stringify({ message: `no route ${key}` }), { status: 500 });
+      return withUrl(
+        new Response(JSON.stringify(p.body), {
+          status: 200,
+          headers: { "content-type": "application/json", ...(p.headers ?? {}) },
+        }),
+        url,
+      );
+    }) as typeof fetch;
+  }
+  const mk = (pages: Parameters<typeof pagedFetch>[0]) =>
+    createOctokitPort({ token: "t", owner: "o", repo: "r", fetch: pagedFetch(pages) });
+
+  it("follows Link headers for listPullFiles", async () => {
+    const gh = mk({
+      "/repos/o/r/pulls/9?page=1": { body: { changed_files: 2 } },
+      "/repos/o/r/pulls/9/files?page=1": {
+        body: [{ filename: "a.ts", patch: "+x" }],
+        headers: link("/repos/o/r/pulls/9/files", 2),
+      },
+      "/repos/o/r/pulls/9/files?page=2": { body: [{ filename: "b.ts" }] },
+    });
+    expect(await gh.listPullFiles(9)).toEqual([
+      { filename: "a.ts", additions: ["x"] },
+      { filename: "b.ts", additions: [] },
+    ]);
+  });
+
+  it("follows Link headers for listCheckRuns and keeps the newest per name", async () => {
+    const gh = mk({
+      "/repos/o/r/commits/abc/check-runs?page=1": {
+        body: {
+          total_count: 3,
+          check_runs: [{ id: 1, name: "unit", status: "completed", conclusion: "failure" }],
+        },
+        headers: link("/repos/o/r/commits/abc/check-runs", 2),
+      },
+      "/repos/o/r/commits/abc/check-runs?page=2": {
+        body: {
+          total_count: 3,
+          check_runs: [
+            { id: 9, name: "unit", status: "completed", conclusion: "success" },
+            { id: 3, name: "e2e", status: "completed", conclusion: "success" },
+          ],
+        },
+      },
+    });
+    expect(await gh.listCheckRuns("abc")).toEqual([
+      { name: "unit", status: "completed", conclusion: "success" },
+      { name: "e2e", status: "completed", conclusion: "success" },
+    ]);
+  });
+
+  it("fails closed at the 3000-file cap", async () => {
+    const gh = mk({ "/repos/o/r/pulls/9?page=1": { body: { changed_files: 3000 } } });
+    await expect(gh.listPullFiles(9)).rejects.toBeInstanceOf(TooManyFilesError);
+  });
+
+  it("fails closed when fewer files are returned than changed_files", async () => {
+    const gh = mk({
+      "/repos/o/r/pulls/9?page=1": { body: { changed_files: 5 } },
+      "/repos/o/r/pulls/9/files?page=1": { body: [{ filename: "a.ts" }] },
+    });
+    await expect(gh.listPullFiles(9)).rejects.toBeInstanceOf(TooManyFilesError);
+  });
+
+  it("maps a missing patch (binary or large diff) to empty additions", async () => {
+    const gh = mk({
+      "/repos/o/r/pulls/9?page=1": { body: { changed_files: 1 } },
+      "/repos/o/r/pulls/9/files?page=1": { body: [{ filename: "img.png" }] },
+    });
+    expect(await gh.listPullFiles(9)).toEqual([{ filename: "img.png", additions: [] }]);
+  });
+
+  it("treats 422 as a conflict only for sha problems, and 404 branch as BranchNotFoundError", async () => {
+    const other = port([
+      { method: "PUT", path: /contents/, status: 422, body: { message: "Invalid request" } },
+    ]);
+    await expect(other.writeFile("b", "p", "x", null, "m")).rejects.not.toBeInstanceOf(
+      ConflictError,
+    );
+    const sha = port([
+      { method: "PUT", path: /contents/, status: 422, body: { message: "sha wasn't supplied" } },
+    ]);
+    await expect(sha.writeFile("b", "p", "x", null, "m")).rejects.toBeInstanceOf(ConflictError);
+    const nb = port([
+      { method: "PUT", path: /contents/, status: 404, body: { message: "Branch b not found" } },
+    ]);
+    await expect(nb.writeFile("b", "p", "x", null, "m")).rejects.toBeInstanceOf(
+      BranchNotFoundError,
+    );
+  });
+
+  it("throws when file content is empty but size is positive", async () => {
+    const gh = port([
+      {
+        method: "GET",
+        path: /contents\/big$/,
+        status: 200,
+        body: { type: "file", sha: "s", size: 2_000_000, content: "" },
+      },
+    ]);
+    await expect(gh.readFile("b", "big")).rejects.toThrow(/too large/);
   });
 });

@@ -1,6 +1,8 @@
 import { Octokit } from "@octokit/rest";
 import {
+  BranchNotFoundError,
   ConflictError,
+  TooManyFilesError,
   type CheckRun,
   type GitHubPort,
   type Issue,
@@ -8,6 +10,8 @@ import {
   type Pull,
 } from "./port";
 import { addedLinesFromPatch } from "../policy/risk";
+
+const MAX_PULL_FILES = 3000;
 
 const PERMISSIONS: readonly Permission[] = ["admin", "maintain", "write", "triage", "read"];
 
@@ -156,11 +160,21 @@ export function createOctokitPort(o: {
       return first ? toPull(first) : null;
     },
     async listPullFiles(n) {
+      const { data: pull } = await octokit.rest.pulls.get({ ...base, pull_number: n });
+      const expected = pull.changed_files;
+      if (expected >= MAX_PULL_FILES)
+        throw new TooManyFilesError(
+          `pull #${n} has ${expected} changed files; GitHub lists at most ${MAX_PULL_FILES}`,
+        );
       const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
         ...base,
         pull_number: n,
         per_page: 100,
       });
+      if (files.length < expected)
+        throw new TooManyFilesError(
+          `pull #${n}: GitHub returned ${files.length} of ${expected} changed files`,
+        );
       return files.map((f) => ({
         filename: f.filename,
         ...(f.previous_filename ? { previousFilename: f.previous_filename } : {}),
@@ -197,9 +211,13 @@ export function createOctokitPort(o: {
       }));
     },
     async listCheckRuns(sha) {
-      const { data } = await octokit.rest.checks.listForRef({ ...base, ref: sha, per_page: 100 });
+      const runs = await octokit.paginate(octokit.rest.checks.listForRef, {
+        ...base,
+        ref: sha,
+        per_page: 100,
+      });
       const latest = new Map<string, { id: number; run: CheckRun }>();
-      for (const c of data.check_runs) {
+      for (const c of runs) {
         const prev = latest.get(c.name);
         if (!prev || c.id > prev.id)
           latest.set(c.name, {
@@ -234,6 +252,8 @@ export function createOctokitPort(o: {
         const { data } = await octokit.rest.repos.getContent({ ...base, path, ref: branch });
         if (Array.isArray(data) || data.type !== "file" || !("content" in data))
           throw new Error(`${path} is not a file`);
+        if (data.content === "" && data.size > 0)
+          throw new Error(`${path} is too large for the contents API (${data.size} bytes)`);
         return { content: Buffer.from(data.content, "base64").toString("utf8"), sha: data.sha };
       } catch (e) {
         if (statusOf(e) === 404) return null;
@@ -252,7 +272,11 @@ export function createOctokitPort(o: {
         });
       } catch (e) {
         const s = statusOf(e);
-        if (s === 409 || s === 422) throw new ConflictError(`${path} changed (${s})`);
+        const msg = e instanceof Error ? e.message : "";
+        if (s === 409) throw new ConflictError(`${path} changed (409)`);
+        if (s === 422 && /sha/i.test(msg)) throw new ConflictError(`${path} changed (422)`);
+        if (s === 404 && /branch/i.test(msg))
+          throw new BranchNotFoundError(`Branch ${branch} not found`);
         throw e;
       }
     },

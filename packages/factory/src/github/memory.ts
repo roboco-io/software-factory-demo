@@ -1,4 +1,5 @@
 import {
+  BranchNotFoundError,
   ConflictError,
   type ChangedFile,
   type CheckRun,
@@ -262,6 +263,8 @@ export class InMemoryGitHub implements GitHubPort {
       this.injectConflicts--;
       throw new ConflictError(`${path} changed`);
     }
+    if (!this.branches.has(branch) && !this.branchHeads.has(branch))
+      throw new BranchNotFoundError(`Branch ${branch} not found`);
     const key = `${branch}:${path}`;
     if ((this.contents.get(key)?.sha ?? null) !== sha)
       throw new ConflictError(`${path} changed (sha)`);
@@ -284,9 +287,14 @@ export class InMemoryGitHub implements GitHubPort {
   async ensureLabel(name: string, color: string, description: string): Promise<void> {
     if (!this.labels.has(name)) this.labels.set(name, { color, description });
   }
-  async createOrphanBranch(branch: string, files: Record<string, string>): Promise<void> {
+  async createOrphanBranch(
+    branch: string,
+    files: Record<string, string>,
+    message: string,
+  ): Promise<void> {
     if (this.branches.has(branch)) return;
     this.branches.add(branch);
+    this.writes.push({ branch, path: "(orphan)", message });
     for (const [p, c] of Object.entries(files))
       this.contents.set(`${branch}:${p}`, { content: c, sha: `blob-${this.blobSeq++}` });
   }

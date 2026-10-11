@@ -52,6 +52,14 @@ export interface FileContent {
   sha: string;
 }
 
+export class BranchNotFoundError extends Error {
+  override name = "BranchNotFoundError";
+}
+
+export class TooManyFilesError extends Error {
+  override name = "TooManyFilesError";
+}
+
 export class ConflictError extends Error {
   override name = "ConflictError";
 }
