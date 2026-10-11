@@ -20,6 +20,7 @@ interface Job {
   needs?: string | string[];
   permissions?: Record<string, string>;
   environment?: string;
+  env?: Record<string, string>;
   outputs?: Record<string, string>;
   concurrency?: { group: string };
   "timeout-minutes"?: number;
@@ -63,8 +64,10 @@ describe("factory workflows", () => {
       "factory-fix.yml",
       "factory-guard.yml",
       "factory-implement.yml",
+      "factory-intake.yml",
       "factory-merge.yml",
       "factory-review.yml",
+      "factory-smoke.yml",
       "factory-triage.yml",
     ]);
   });
@@ -346,6 +349,102 @@ describe("modified P1 workflows", () => {
           expect(["production", "preview"], `${file} ${name}`).toContain(job.environment);
         }
       }
+    }
+  });
+});
+
+describe("P3 intake workflows", () => {
+  it("factory-intake.yml runs main's CLI with the production INTAKE_TOKEN only in the intake step", () => {
+    const wf = load("factory-intake.yml");
+    expect(Object.keys(wf.on).sort()).toEqual(["schedule", "workflow_dispatch"]);
+    expect(wf.concurrency).toEqual({ group: "factory-intake", "cancel-in-progress": false });
+    expect(Object.keys(wf.jobs)).toEqual(["intake"]);
+    const job = wf.jobs.intake!;
+    expect(job.if).toBe("github.ref == 'refs/heads/main'");
+    expect(job.environment).toBe("production");
+    expect(job.permissions).toEqual({ contents: "read" });
+    expect(checkouts(job)).toHaveLength(1);
+    expect(checkouts(job)[0]!.with).toMatchObject({ ref: "main", "persist-credentials": false });
+    const run = job.steps.find((s) => s.run?.includes("pnpm -s factory intake"))!;
+    expect(run.env?.INTAKE_TOKEN).toBe("${{ secrets.INTAKE_TOKEN }}");
+    expect(run.env?.FACTORY_TOKEN).toBe("${{ steps.app.outputs.token }}");
+    expect(run.env?.INTAKE_URL).toBe(
+      "https://sfd-api.${{ vars.WORKERS_SUBDOMAIN }}.workers.dev/api",
+    );
+    expect(JSON.stringify(job.steps.filter((s) => s !== run))).not.toContain("INTAKE_TOKEN");
+  });
+
+  it("factory-smoke.yml checks production without secrets and reports with an App token", () => {
+    const wf = load("factory-smoke.yml");
+    expect(Object.keys(wf.on).sort()).toEqual(["schedule", "workflow_dispatch"]);
+    expect(wf.concurrency).toEqual({ group: "factory-smoke", "cancel-in-progress": false });
+    expect(Object.keys(wf.jobs)).toEqual(["target", "checks", "report"]);
+    const checks = wf.jobs.checks!;
+    const report = wf.jobs.report!;
+    expect(checks.permissions).toEqual({ contents: "read" });
+    expect(checks.environment).toBeUndefined();
+    expect(JSON.stringify(checks)).not.toMatch(
+      /secrets\.|create-github-app-token|FACTORY_TOKEN|INTAKE_TOKEN/,
+    );
+    for (const s of checkouts(checks)) {
+      expect(s.with).toMatchObject({ ref: "main", "persist-credentials": false });
+    }
+    expect(checks.steps.some((s) => s.run?.includes("tests/smoke/readonly.hurl"))).toBe(true);
+    expect(checks.steps.some((s) => s.run?.includes("e2e-smoke/playwright.config.ts"))).toBe(true);
+    expect(report.needs).toEqual(["target", "checks"]);
+    expect(report.if).toContain("!cancelled()");
+    expect(report.if).toContain("needs.target.result == 'success'");
+    const run = report.steps.find((s) => s.run?.includes("pnpm -s factory smoke-report"))!;
+    expect(run.run).toContain('--result "$RESULT"');
+    // F6: 취소·시간 초과도 실패로 넘겨, 스모크 실패가 이슈 없이 사라지지 않게 한다.
+    expect(run.env?.RESULT).toBe(
+      "${{ needs.checks.result == 'success' && 'success' || 'failure' }}",
+    );
+    expect(run.env?.SMOKE_API_BASE).toBe("${{ inputs.api_base }}");
+  });
+
+  it("factory-smoke.yml accepts an api_base override only under the production API, before any check runs", () => {
+    const wf = load("factory-smoke.yml");
+    const target = wf.jobs.target!;
+    expect(target.permissions).toEqual({});
+    expect(checkouts(target)).toHaveLength(0);
+    expect(JSON.stringify(target)).not.toMatch(/secrets\./);
+    expect(target.env?.PROD_API).toBe(
+      "https://sfd-api.${{ vars.WORKERS_SUBDOMAIN }}.workers.dev/api",
+    );
+    const reject = target.steps.find((s) => s.run?.trim() === "exit 1")!;
+    expect(reject.if).toContain("inputs.api_base != ''");
+    expect(reject.if).toContain("inputs.api_base != env.PROD_API");
+    expect(reject.if).toContain("!startsWith(inputs.api_base, format('{0}/', env.PROD_API))");
+    expect(wf.jobs.checks!.needs).toBe("target");
+    expect(wf.jobs.checks!.env?.API_BASE).toBe(
+      "${{ inputs.api_base || format('https://sfd-api.{0}.workers.dev/api', vars.WORKERS_SUBDOMAIN) }}",
+    );
+  });
+
+  it("deploy.yml syncs INTAKE_TOKEN into the Worker through stdin before deploying, without printing it (F5)", () => {
+    const job = load("deploy.yml").jobs.api!;
+    expect(job.environment).toBe("production");
+    const index = job.steps.findIndex((s) => s.run?.includes("wrangler secret put INTAKE_TOKEN"));
+    const step = job.steps[index]!;
+    expect(step.run).toContain(
+      `printf '%s' "$INTAKE_TOKEN" | pnpm exec wrangler secret put INTAKE_TOKEN`,
+    );
+    expect(step.run).toContain('test -n "$INTAKE_TOKEN"');
+    expect(step.run).not.toMatch(/\becho\b/);
+    expect(step.env?.INTAKE_TOKEN).toBe("${{ secrets.INTAKE_TOKEN }}");
+    expect(step["working-directory"]).toBe("apps/api");
+    const deploy = job.steps.findIndex((s) => s.run?.trim() === "pnpm exec wrangler deploy");
+    expect(deploy).toBeGreaterThan(index);
+    const others = job.steps.filter((_, i) => i !== index);
+    expect(JSON.stringify(others)).not.toContain("INTAKE_TOKEN");
+  });
+
+  it("never hand INTAKE_TOKEN to preview Workers or other workflows (T9-a)", () => {
+    const allowed = new Set(["deploy.yml", "factory-intake.yml"]);
+    for (const file of ALL) {
+      if (allowed.has(file)) continue;
+      expect(readFileSync(path.join(DIR, file), "utf8"), file).not.toContain("INTAKE_TOKEN");
     }
   });
 });

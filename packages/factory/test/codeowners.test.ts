@@ -88,6 +88,12 @@ describe(".github/CODEOWNERS", () => {
     ".prettierrc.json",
     ".prettierignore",
     ".gitignore",
+    "tests/smoke/readonly.hurl",
+    "apps/web/e2e-smoke/home.spec.ts",
+    "apps/web/e2e-smoke/playwright.config.ts",
+    "apps/api/src/middleware/intake.ts",
+    "apps/api/src/routes/intake.ts",
+    "apps/api/migrations/0003_intake.sql",
   ])("requires @serithemage for T2/T3 path %s", (file) => {
     expect(["T2", "T3"]).toContain(tierOf(file, policy).tier);
     expect(ownersOf(file)).toEqual(["@serithemage"]);

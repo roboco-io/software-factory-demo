@@ -42,6 +42,9 @@ rules:
       - "apps/api/src/routes/users.ts" # 로그인·회원가입
       - "apps/*/wrangler.*"
       - "**/.dev.vars"
+      # 수집 엔드포인트의 토큰 검사는 에러·피드백 데이터의 인증 경계다.
+      - "apps/api/src/middleware/intake.ts"
+      - "apps/api/src/routes/intake.ts"
   - tier: T0
     patterns:
       - "docs/**"

@@ -34,6 +34,8 @@ claude.local.md @serithemage
 .dev.vars @serithemage
 package.json @serithemage
 /pnpm-*.yaml @serithemage
+/apps/api/src/middleware/intake.ts @serithemage
+/apps/api/src/routes/intake.ts @serithemage
 
 # T2(default): 어떤 규칙에도 맞지 않는 루트 설정 파일
 /eslint.config.js @serithemage
