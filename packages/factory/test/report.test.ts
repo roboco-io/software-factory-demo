@@ -244,3 +244,11 @@ describe("hardening", () => {
     ).toBeNull();
   });
 });
+
+describe("cell and comment edge cases", () => {
+  it("replaces lone CR in table cells", () => {
+    const body = renderPrBody(report({ checks: [{ name: "a\rb", ok: true }] }));
+    expect(body).not.toContain("\r");
+    expect(body).toContain("`a b`");
+  });
+});
