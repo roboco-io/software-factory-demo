@@ -1,7 +1,7 @@
 import type { Role } from "../agents/types";
 import { BranchNotFoundError, ConflictError, type GitHubPort } from "../github/port";
 
-export type RunRole = Role | "command" | "gate" | "deploy";
+export type RunRole = Role | "command" | "gate" | "deploy" | "intake" | "smoke";
 
 export interface RunRecord {
   ts: string;

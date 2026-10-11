@@ -105,6 +105,15 @@ export function createOctokitPort(o: {
       });
       return data.filter((i) => !i.pull_request).map(toIssue);
     },
+    async listClosedIssuesWithLabel(label) {
+      const data = await octokit.paginate(octokit.rest.issues.listForRepo, {
+        ...base,
+        state: "closed",
+        labels: label,
+        per_page: 100,
+      });
+      return data.filter((i) => !i.pull_request).map(toIssue);
+    },
     async latestIssueWithLabel(label) {
       const { data } = await octokit.rest.issues.listForRepo({
         ...base,

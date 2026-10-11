@@ -42,6 +42,21 @@ export const LABELS: LabelSpec[] = [
     color: "d93f0b",
     description: "프로덕션 배포·스모크 실패로 사람에게 돌아온 이슈",
   },
+  {
+    name: "source:error",
+    color: "d93f0b",
+    description: "프로덕션 에러 유입(factory-intake). 트리아지 후 @factory go로 착수",
+  },
+  {
+    name: "source:feedback",
+    color: "d93f0b",
+    description: "앱 내 익명 피드백 유입(factory-intake). 트리아지 후 @factory go로 착수",
+  },
+  {
+    name: "source:smoke",
+    color: "d93f0b",
+    description: "프로덕션 스모크 실패 유입(factory-smoke). 트리아지 후 @factory go로 착수",
+  },
 ];
 
 export async function runBootstrap(deps: StageDeps): Promise<{ labels: number; branch: string }> {

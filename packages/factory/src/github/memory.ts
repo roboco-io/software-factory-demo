@@ -152,6 +152,11 @@ export class InMemoryGitHub implements GitHubPort {
       .filter((i) => i.state === "open")
       .map((i) => ({ ...i, labels: [...i.labels] }));
   }
+  async listClosedIssuesWithLabel(label: string): Promise<Issue[]> {
+    return [...this.issues.values()]
+      .filter((i) => i.state === "closed" && !i.isPullRequest && i.labels.includes(label))
+      .map((i) => ({ ...i, labels: [...i.labels] }));
+  }
   async latestIssueWithLabel(label: string): Promise<LabeledIssueRef | null> {
     const hits = [...this.issues.values()]
       .filter((i) => !i.isPullRequest && i.labels.includes(label))

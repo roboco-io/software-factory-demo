@@ -19,6 +19,7 @@ import { implementStage } from "./stages/implement";
 import type { StageDeps } from "./stages/deps";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
 import { reviewStage } from "./stages/review";
+import { createIntakeClient, runIntake } from "./stages/intake";
 import { runRisk } from "./stages/risk";
 import { triageStage } from "./stages/triage";
 
@@ -26,6 +27,8 @@ export interface CliContext {
   env: NodeJS.ProcessEnv;
   buildDeps(env: NodeJS.ProcessEnv, phase: Phase): StageDeps;
   stdout(s: string): void;
+  // 테스트용. 없으면 전역 fetch를 쓴다.
+  fetch?: typeof fetch;
 }
 
 type Values = Record<string, string | boolean | undefined>;
@@ -216,6 +219,19 @@ export const COMMANDS: Record<string, Handler> = {
     const result = await runEvidence(ctx.buildDeps(ctx.env, "agent"), plan);
     ctx.stdout(v.json === true ? JSON.stringify(result) : renderEvidenceText(result));
     return result.ok ? 0 : 1;
+  },
+  intake: async (ctx) => {
+    const url = ctx.env.INTAKE_URL ?? "";
+    const token = ctx.env.INTAKE_TOKEN ?? "";
+    if (!/^https?:\/\/\S+$/.test(url) || token.length === 0) {
+      throw new UsageError("INTAKE_URL(http(s)://...)과 INTAKE_TOKEN 환경변수가 필요하다");
+    }
+    const summary = await runIntake(
+      ctx.buildDeps(ctx.env, "all"),
+      createIntakeClient(url, token, ctx.fetch),
+    );
+    ctx.stdout(JSON.stringify(summary));
+    return summary.failed > 0 ? 1 : 0;
   },
 };
 

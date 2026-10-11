@@ -73,6 +73,8 @@ export class ConflictError extends Error {
 export interface GitHubPort {
   getIssue(n: number): Promise<Issue>;
   listOpenIssues(): Promise<Issue[]>;
+  // 라벨이 붙은 닫힌 이슈(PR 제외) 전체. 끝까지 읽지 못하면 예외다.
+  listClosedIssuesWithLabel(label: string): Promise<Issue[]>;
   // 열림·닫힘 상관없이 라벨이 붙은 이슈(PR 제외) 가운데 가장 최근에 만든 것.
   latestIssueWithLabel(label: string): Promise<LabeledIssueRef | null>;
   addLabels(n: number, labels: string[]): Promise<void>;

@@ -185,7 +185,7 @@ export function crashRecord(
 }
 
 export function stepRecord(
-  role: "command" | "gate" | "deploy",
+  role: "command" | "gate" | "deploy" | "intake" | "smoke",
   issue: number,
   pr: number | null,
   ok: boolean,

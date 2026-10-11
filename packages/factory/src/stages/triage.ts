@@ -16,6 +16,7 @@ import {
   runLink,
   TimedResultSchema,
 } from "./common";
+import { INTAKE_SOURCES } from "./intake";
 import type { PhasedStage } from "./phased";
 
 export interface TriagePlan {
@@ -37,7 +38,13 @@ export const triageStage: PhasedStage<{ issue: number }, TriagePlan, TriageOutco
   name: "triage",
   async prepare(deps, { issue }) {
     const { issue: info, state } = await readState(deps.gh, issue);
-    if (info.isPullRequest || info.state !== "open" || isBot(deps.settings, info.author)) {
+    // 봇이 연 이슈(차단기 알림 등)는 건너뛴다. 단 유입 이슈(source:error|feedback|smoke)는 트리아지한다(spec 7.1.3).
+    const intake = info.labels.some((l) => (INTAKE_SOURCES as readonly string[]).includes(l));
+    if (
+      info.isPullRequest ||
+      info.state !== "open" ||
+      (isBot(deps.settings, info.author) && !intake)
+    ) {
       return null;
     }
     if (!canTransition(state, "triaged", "triage")) return null;

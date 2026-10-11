@@ -228,6 +228,28 @@ describe("createOctokitPort pagination and caps", () => {
   const mk = (pages: Parameters<typeof pagedFetch>[0]) =>
     createOctokitPort({ token: "t", owner: "o", repo: "r", fetch: pagedFetch(pages) });
 
+  it("follows Link headers for listClosedIssuesWithLabel and drops pull requests", async () => {
+    const issue = (number: number, pr = false) => ({
+      number,
+      title: "t",
+      body: null,
+      user: { login: "bot" },
+      labels: [{ name: "source:error" }],
+      state: "closed",
+      ...(pr ? { pull_request: {} } : {}),
+    });
+    const gh = mk({
+      "/repos/o/r/issues?page=1": {
+        body: [issue(1), issue(2, true)],
+        headers: link("/repos/o/r/issues", 2),
+      },
+      "/repos/o/r/issues?page=2": { body: [issue(3)] },
+    });
+    expect((await gh.listClosedIssuesWithLabel("source:error")).map((i) => i.number)).toEqual([
+      1, 3,
+    ]);
+  });
+
   it("follows Link headers for listPullFiles", async () => {
     const gh = mk({
       "/repos/o/r/pulls/9?page=1": { body: { changed_files: 2 } },

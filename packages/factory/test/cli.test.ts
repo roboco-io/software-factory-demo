@@ -20,6 +20,72 @@ function context(
 }
 
 describe("cli main", () => {
+  it("intake requires INTAKE_URL and INTAKE_TOKEN and calls nothing without them", async () => {
+    const h = makeTestDeps();
+    const phases: Phase[] = [];
+    let fetched = 0;
+    const fetchImpl = (async () => {
+      fetched++;
+      return new Response("{}");
+    }) as typeof fetch;
+    for (const env of [
+      {},
+      { INTAKE_URL: "https://x/api" },
+      { INTAKE_TOKEN: "t" },
+      { INTAKE_URL: "ftp://x", INTAKE_TOKEN: "t" },
+    ]) {
+      const out: string[] = [];
+      expect(await main(["intake"], { ...context(h, phases, out), env, fetch: fetchImpl })).toBe(2);
+      expect(out[0]).toContain("INTAKE_URL");
+    }
+    expect(fetched).toBe(0);
+    expect(phases).toEqual([]);
+  });
+
+  it("intake acks only successes, exits 1 on a partial failure and never prints the token", async () => {
+    const h = makeTestDeps();
+    const create = h.gh.createIssue.bind(h.gh);
+    let calls = 0;
+    h.gh.createIssue = async (title, body, labels) => {
+      if (++calls === 1) throw new Error("GitHub 502");
+      return create(title, body, labels);
+    };
+    const acks: unknown[] = [];
+    const auth: (string | null)[] = [];
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      auth.push(new Headers(init?.headers).get("authorization"));
+      if (String(input).endsWith("/ack")) {
+        acks.push(JSON.parse(String(init?.body)));
+        return new Response("{}");
+      }
+      return Response.json({
+        errors: [
+          {
+            fingerprint: "0123456789abcdef",
+            message: "m",
+            path: "/p",
+            count: 1,
+            firstSeen: "t",
+            lastSeen: "t",
+          },
+        ],
+        feedback: [{ id: 7, body: "b", path: "/#/", createdAt: "t" }],
+      });
+    }) as typeof fetch;
+    const out: string[] = [];
+    const env = { INTAKE_URL: "https://api.test/api", INTAKE_TOKEN: "s3cret-token" };
+    expect(await main(["intake"], { ...context(h, [], out), env, fetch: fetchImpl })).toBe(1);
+    expect(JSON.parse(out[0] ?? "")).toEqual({
+      created: [1],
+      updated: [],
+      acked: { errors: 0, feedback: 1 },
+      failed: 1,
+    });
+    expect(out.join("\n")).not.toContain("s3cret-token");
+    expect(auth).toEqual(["Bearer s3cret-token", "Bearer s3cret-token"]);
+    expect(acks).toEqual([{ errors: [], feedback: [7] }]);
+  });
+
   it("runs the command stage with COMMENT_BODY from env", async () => {
     const h = makeTestDeps();
     const issue = h.gh.addIssue({ title: "t", labels: ["factory:triaged"] });

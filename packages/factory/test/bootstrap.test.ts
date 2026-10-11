@@ -6,9 +6,9 @@ import { makeTestDeps } from "./helpers";
 describe("runBootstrap", () => {
   it("creates every factory label and the factory-data branch, idempotently", async () => {
     const h = makeTestDeps();
-    expect(await runBootstrap(h.deps)).toEqual({ labels: 24, branch: DATA_BRANCH });
+    expect(await runBootstrap(h.deps)).toEqual({ labels: 27, branch: DATA_BRANCH });
     await runBootstrap(h.deps);
-    expect(h.gh.labels.size).toBe(24);
+    expect(h.gh.labels.size).toBe(27);
     for (const name of [
       "factory:new",
       "factory:deployed",
@@ -18,6 +18,9 @@ describe("runBootstrap", () => {
       "type:feedback",
       "agent:pi",
       "source:deploy",
+      "source:error",
+      "source:feedback",
+      "source:smoke",
     ]) {
       expect(h.gh.labels.has(name)).toBe(true);
     }
