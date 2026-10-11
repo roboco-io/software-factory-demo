@@ -95,13 +95,15 @@ describe("review stage", () => {
   it("drops the verdict when the head moved during the review", async () => {
     const codex = createFakeAdapter(loadFakeScript("review-approve"), "codex");
     const h = makeTestDeps({ adapters: { codex } });
-    const { pr, branch } = await openBotPr(h);
+    const { pr, branch, issue } = await openBotPr(h);
     const plan = (await reviewStage.prepare(h.deps, { pr }))!;
     const out = await reviewStage.agent(h.deps, plan);
     h.gh.setBranch(branch, "sha-b", ["apps/api/src/routes/tags.ts"]);
     await reviewStage.publish(h.deps, plan, out);
     expect(await h.gh.listReviews(pr)).toHaveLength(0);
-    expect(h.gh.dispatches).toEqual([]);
+    expect(h.gh.dispatches).toEqual([
+      { file: "factory-review.yml", inputs: { pr: String(pr), issue: String(issue) } },
+    ]);
   });
 
   it("validates the outcome and treats ok=false as no verdict", async () => {
@@ -131,9 +133,10 @@ describe("review stage", () => {
   it("does not approve an empty diff", async () => {
     const codex = createFakeAdapter(loadFakeScript("review-approve"), "codex");
     const h = makeTestDeps({ adapters: { codex } });
-    const { pr } = await openBotPr(h);
+    const { pr, issue } = await openBotPr(h);
     h.git.baseDiff = "";
     await runPhase(reviewStage, "all", h.deps, { pr }, null);
+    expect((await h.gh.getIssue(issue)).labels).toContain("factory:needs-human");
     expect(codex.calls).toHaveLength(0);
     expect(await h.gh.listReviews(pr)).toHaveLength(0);
     expect(h.gh.dispatches).toEqual([]);

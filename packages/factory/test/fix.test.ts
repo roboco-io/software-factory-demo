@@ -224,4 +224,29 @@ describe("fix stage", () => {
       { file: "factory-review.yml", inputs: { pr: String(pr), issue: String(issue) } },
     ]);
   });
+
+  it("a crash after the push still dispatches review when the issue is already in-review", async () => {
+    const h = makeTestDeps({ adapters: { claude: createFakeAdapter([], "claude") } });
+    const { pr, issue, branch } = await openBotPr(h);
+    const plan = (await fixStage.prepare(h.deps, { pr, sha: "sha-a", reason: "ci" }))!;
+    h.gh.setBranch(branch, "sha-pushed", ["apps/api/src/routes/tags.ts"]);
+    await h.gh.removeLabel(issue, "factory:in-progress");
+    await h.gh.addLabels(issue, ["factory:in-review"]);
+    await fixStage.crashed(h.deps, plan);
+    expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:in-review"]);
+    expect(h.gh.dispatches).toEqual([
+      { file: "factory-review.yml", inputs: { pr: String(pr), issue: String(issue) } },
+    ]);
+  });
+
+  it("does not dispatch review after a crash when a human moved the issue to needs-human", async () => {
+    const h = makeTestDeps({ adapters: { claude: createFakeAdapter([], "claude") } });
+    const { pr, issue, branch } = await openBotPr(h);
+    const plan = (await fixStage.prepare(h.deps, { pr, sha: "sha-a", reason: "ci" }))!;
+    h.gh.setBranch(branch, "sha-pushed", ["apps/api/src/routes/tags.ts"]);
+    await h.gh.removeLabel(issue, "factory:in-progress");
+    await h.gh.addLabels(issue, ["factory:needs-human"]);
+    await fixStage.crashed(h.deps, plan);
+    expect(h.gh.dispatches).toEqual([]);
+  });
 });

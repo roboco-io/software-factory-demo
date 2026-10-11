@@ -210,6 +210,13 @@ export const reviewStage: PhasedStage<{ pr: number }, ReviewPlan, ReviewOutcome>
     const pull = await deps.gh.getPull(plan.pr);
     if (pull.headSha !== plan.headSha || pull.state !== "open") {
       deps.log(`review: PR #${plan.pr} head moved to ${pull.headSha}; verdict dropped`);
+      // 새 head에는 판정이 없다. 이슈는 in-review로 남아 있으므로 새 head를 리뷰하도록 다시 보낸다.
+      if (pull.state === "open") {
+        await deps.gh.dispatchWorkflow("factory-review.yml", {
+          pr: String(plan.pr),
+          issue: String(plan.issue),
+        });
+      }
       return;
     }
     if (latestVerdict(await deps.gh.listReviews(plan.pr), deps.settings.botLogin, plan.headSha)) {

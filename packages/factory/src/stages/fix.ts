@@ -127,12 +127,17 @@ async function feedbackFor(
   return `CI 필수 체크가 실패했다: ${failing.join(", ") || "(실패한 체크 이름을 찾지 못함)"}. 작업 디렉토리에서 같은 검사(pnpm typecheck, pnpm lint, pnpm test, RealWorld 스위트는 scripts/realworld-api.sh)를 실행해 원인을 찾고 고친다.`;
 }
 
+// in-progress면 in-review로 옮긴다. 이미 in-review면(전이는 허용되지 않지만 목표 상태다) true.
+// needs-human·merged 등 다른 상태면 false라서 호출한 쪽이 dispatch하지 않는다.
+async function toReview(deps: StageDeps, plan: FixPlan, reason: string): Promise<boolean> {
+  if (await moveTo(deps, plan.issue, "in-review", "fix", reason)) return true;
+  return (await readState(deps.gh, plan.issue)).state === "in-review";
+}
+
 async function backToReview(deps: StageDeps, plan: FixPlan): Promise<void> {
-  const moved = await moveTo(
+  const moved = await toReview(
     deps,
-    plan.issue,
-    "in-review",
-    "fix",
+    plan,
     `PR #${plan.pr}의 head가 수정 중에 바뀌었다. 새 head를 다시 리뷰한다.${runLink(deps.settings)}`,
   );
   if (moved) {
@@ -145,11 +150,9 @@ async function backToReview(deps: StageDeps, plan: FixPlan): Promise<void> {
 
 async function retryOrEscalate(deps: StageDeps, plan: FixPlan, why: string): Promise<void> {
   if (plan.round < MAX_ROUNDS) {
-    const moved = await moveTo(
+    const moved = await toReview(
       deps,
-      plan.issue,
-      "in-review",
-      "fix",
+      plan,
       `${why} 수정 라운드 ${plan.round}/${MAX_ROUNDS}를 소모하고 다시 시도한다.${runLink(deps.settings)}`,
     );
     if (!moved) return;
