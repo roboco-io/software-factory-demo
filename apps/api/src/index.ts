@@ -44,10 +44,15 @@ app.onError((err, c) => {
   if (unique) return c.json({ errors: { [unique[1]!]: ["has already been taken"] } }, 409);
   console.error(err);
   // spec 7.1.3: 기록은 응답을 늦추지 않도록 waitUntil로 넘기고, 기록 실패는 무시한다.
+  // routePath를 읽다 실패해도 기록은 남겨야 하므로 별도 try로 감싼다.
+  let route = "{unmatched}";
   try {
-    c.executionCtx.waitUntil(
-      recordError(c.env, err, c.req.routePath ?? "{unmatched}").catch(() => undefined),
-    );
+    route = c.req.routePath ?? route;
+  } catch {
+    // 패턴을 알 수 없으면 {unmatched}로 기록한다.
+  }
+  try {
+    c.executionCtx.waitUntil(recordError(c.env, err, route).catch(() => undefined));
   } catch {
     // ExecutionContext가 없는 실행에서는 기록하지 않는다.
   }

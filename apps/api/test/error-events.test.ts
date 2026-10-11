@@ -170,11 +170,9 @@ describe("recordError", () => {
   it("stops inserting new fingerprints at the cap but still upserts existing ones", async () => {
     expect(ERROR_EVENTS_CAP).toBe(500);
     const count = async () =>
-      (
-        await env.DB.prepare(
-          "SELECT COUNT(*) AS c FROM error_events WHERE acked_at IS NULL OR acked_at < last_seen",
-        ).first<{ c: number }>()
-      )!.c;
+      (await env.DB.prepare(
+        "SELECT COUNT(*) AS c FROM error_events WHERE acked_at IS NULL OR acked_at < last_seen",
+      ).first<{ c: number }>())!.c;
     const existing = make("cap existing");
     await recordError(env, existing, "/p");
     const n = await count();

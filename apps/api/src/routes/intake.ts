@@ -93,7 +93,9 @@ intakeRouter.post("/_factory/intake/ack", requireIntakeToken, async (c) => {
       await d
         .update(errorEvents)
         .set({ ackedAt: e.lastSeen })
-        .where(and(eq(errorEvents.fingerprint, e.fingerprint), lte(errorEvents.lastSeen, e.lastSeen)));
+        .where(
+          and(eq(errorEvents.fingerprint, e.fingerprint), lte(errorEvents.lastSeen, e.lastSeen)),
+        );
     }
   }
   if (ids.length > 0) {

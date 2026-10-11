@@ -1,6 +1,8 @@
 import { env } from "cloudflare:workers";
 import { Hono } from "hono";
-import { describe, expect, it } from "vitest";
+import { HonoRequest } from "hono/request";
+import app from "../src/index";
+import { describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "../src/env";
 import { constantTimeEqual, requireIntakeToken } from "../src/middleware/intake";
 import { api } from "./helpers";
@@ -153,7 +155,9 @@ describe("intake endpoints", () => {
       method: "POST",
       headers: auth(),
       body: {
-        errors: [{ fingerprint: fp, lastSeen: list.errors.find((e) => e.fingerprint === fp)!.lastSeen }],
+        errors: [
+          { fingerprint: fp, lastSeen: list.errors.find((e) => e.fingerprint === fp)!.lastSeen },
+        ],
         feedback: [item.id],
       },
     });
@@ -215,5 +219,35 @@ describe("intake endpoints", () => {
       const res = await api("/_factory/intake/ack", { method: "POST", headers: auth(), body });
       expect(res.status, JSON.stringify(body)).toBe(422);
     }
+  });
+
+  it("still records the error when reading c.req.routePath throws (falls back to {unmatched})", async () => {
+    // 같은 fingerprint의 기존 행은 경로를 갱신하지 않으므로 먼저 지운다.
+    await env.DB.prepare("DELETE FROM error_events WHERE path = ?").bind(PROBE_PATH).run();
+    const spy = vi.spyOn(HonoRequest.prototype, "routePath", "get").mockImplementation(() => {
+      throw new Error("routePath unavailable");
+    });
+    const pendingWork: Promise<unknown>[] = [];
+    const ctx = {
+      waitUntil: (p: Promise<unknown>) => void pendingWork.push(p),
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext;
+    try {
+      const res = await app.request(
+        "/api/_factory/intake/probe",
+        { method: "POST", headers: auth() },
+        { ...env, INTAKE_TOKEN: TOKEN },
+        ctx,
+      );
+      expect(res.status).toBe(500);
+      await Promise.all(pendingWork);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(pendingWork).toHaveLength(1);
+    const row = await env.DB.prepare("SELECT 1 AS x FROM error_events WHERE path = ?")
+      .bind("{unmatched}")
+      .first();
+    expect(row).not.toBeNull();
   });
 });
