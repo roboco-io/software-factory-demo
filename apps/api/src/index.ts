@@ -4,6 +4,7 @@ import type { AppEnv } from "./env";
 import { ApiError } from "./lib/errors";
 import { deferredRouter } from "./routes/deferred";
 import { articlesRouter } from "./routes/articles";
+import { commentsRouter } from "./routes/comments";
 import { profilesRouter } from "./routes/profiles";
 import { usersRouter } from "./routes/users";
 
@@ -24,6 +25,7 @@ router.route("/", deferredRouter);
 router.route("/", usersRouter);
 router.route("/", profilesRouter);
 router.route("/", articlesRouter);
+router.route("/", commentsRouter);
 
 app.route("/api", router);
 

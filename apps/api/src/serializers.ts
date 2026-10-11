@@ -44,3 +44,16 @@ export const serializeArticle = (
   favoritesCount: 0,
   author: serializeProfile(author, false),
 });
+
+type CommentRow = { id: number; body: string; createdAt: string; updatedAt: string };
+
+export const serializeComment = (
+  c: CommentRow,
+  author: Pick<UserRow, "username" | "bio" | "image">,
+) => ({
+  id: c.id,
+  createdAt: c.createdAt,
+  updatedAt: c.updatedAt,
+  body: c.body,
+  author: serializeProfile(author, false),
+});
