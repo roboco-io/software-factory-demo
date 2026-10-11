@@ -7,3 +7,4 @@ apps/web/public/styles.css
 **/test-results/
 docs/superpowers/
 .superpowers/
+factory/prompts/
