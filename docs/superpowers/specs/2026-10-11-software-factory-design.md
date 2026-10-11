@@ -330,12 +330,34 @@ RealWorld Hurl 스위트는 업스트림 리포의 특정 커밋을 고정(pin)�
 
 ### 7.1 P3 증거·유입 확장
 
-- `evidence` 체크(6.4)와 버그 이슈 구현 프롬프트의 "재현 테스트 먼저 커밋" 규칙.
-- 프로덕션 에러: Worker `onError`가 에러 fingerprint(메시지 정규화 + 스택 상위 프레임 해시)를 D1 `error_events`에 기록한다.
-- 피드백: `POST /api/feedback`(rate limit 적용) → D1 `feedback`.
-- 수집: `factory-intake.yml`(30분마다)이 관리자 토큰으로 보호된 `GET /api/_factory/intake`를 호출해 미처리 레코드를 가져오고, fingerprint 기준으로 새 이슈를 만들거나 기존 이슈에 코멘트를 추가한다. 앱은 GitHub 토큰을 갖지 않는다.
-- 스모크: `factory-smoke.yml`(6시간마다)이 프로덕션에 Hurl 핵심 케이스와 Playwright를 실행하고, 실패하면 `source:smoke` 이슈를 만든다.
-- 피드백·에러·스모크로 생성된 이슈는 모두 트리아지를 거치며, 구현 착수에는 사람의 `@factory go`가 필요하다.
+2026-10-11 사용자 결정: P2 잔여 과제를 P3에 포함한다. 피드백은 익명으로 받는다. 버그 수정 시나리오는 사람이 의도적으로 심은 버그로 검증한다.
+
+#### 7.1.1 P2 잔여 과제
+
+- `ci.yml`의 `risk-tier`와 `preview.yml`의 `policy`에서 "base 커밋에 factory CLI가 없으면 건너뛴다"는 임시 분기를 제거한다. 이 분기는 P2 첫 병합을 위한 것이었고, main에 CLI가 생긴 뒤에는 CLI가 사라져도 체크가 조용히 통과하게 만드는 구멍이다.
+- 리뷰 publish는 이슈가 위험 등급(T2·T3) 때문에 `needs-human`에 있어도 교차 리뷰 판정 코멘트를 남긴다. 이때 상태는 바꾸지 않는다. 판정은 지금처럼 리뷰한 head SHA에 묶는다. 목적은 사람 리뷰어가 T2·T3 PR에서도 AI 리뷰 결과를 보게 하는 것이다(10.1 마지막 항목 해소).
+
+#### 7.1.2 증거 게이트 `evidence`
+
+- 필수 체크로 추가한다(main 보호 규칙의 필수 체크가 7개가 된다).
+- 대상: PR 본문의 팩토리 표식이 가리키는 이슈에 `type:bug` 라벨이 있는 PR. 그 밖의 PR(사람이 연 PR 포함)은 검사 없이 즉시 통과한다.
+- 판정 방법(커밋 순서와 무관): base 커밋 트리에 PR이 추가·수정한 테스트 파일만 head 버전으로 덮어써서 해당 테스트를 실행하고, 이 실행이 **실패**해야 한다. 이어서 head 트리에서 같은 테스트를 실행해 **통과**해야 한다. 테스트 파일은 `apps/*/test/**`, `**/*.test.ts`, `apps/web/e2e/**`로 정의한다. 버그 PR인데 테스트 파일 변경이 없으면 실패다.
+- 판정 코드는 base 커밋의 factory CLI로 실행하고, PR 코드는 시크릿이 없는 job에서만 실행한다(5.4).
+- 커밋 순서(재현 테스트 커밋이 먼저인지)는 판정에 쓰지 않는다. P2 publish가 커밋을 하나로 합치기 때문이다.
+- 버그 이슈의 implement 프롬프트에 "재현 테스트를 먼저 작성해 실패를 확인한 뒤 수정하라"는 규칙을 추가한다.
+
+#### 7.1.3 유입: 에러·피드백·스모크
+
+- 프로덕션 에러: Worker `onError`가 fingerprint(메시지의 숫자·UUID·slug를 정규화한 문자열과 스택 상위 3프레임의 SHA-256 앞 16자)를 계산해 D1 `error_events`에 upsert한다. 열은 fingerprint, 대표 메시지, 경로, `count`, `first_seen`, `last_seen`, `acked_at`이다. 기록은 `ctx.waitUntil`로 처리해 응답을 늦추지 않으며, 기록 실패는 무시한다.
+- 익명 피드백: `POST /api/feedback`(`{"feedback": {"body": "...", "path": "/#/..."}}`). 본문은 1-2000자, 경로는 200자 이하. IP는 원문을 저장하지 않고 `SHA-256(IP + INTAKE_TOKEN)` 해시만 저장하며, 같은 해시는 10분에 3건까지 받고 초과하면 429를 반환한다. 웹 푸터에 "피드백" 버튼과 모달을 둔다.
+- 수집 엔드포인트: `GET /api/_factory/intake`(미확인 에러와 피드백 최대 50건)와 `POST /api/_factory/intake/ack`(`{"errors": [fingerprint], "feedback": [id]}`). 둘 다 `Authorization: Bearer <INTAKE_TOKEN>`이 필요하고, 토큰이 없거나 다르면 404를 반환해 엔드포인트 존재를 드러내지 않는다. `INTAKE_TOKEN`은 Worker secret과 GitHub `production` environment secret에 같은 값으로 둔다.
+- 수집 워크플로: `factory-intake.yml`이 30분마다 `pnpm -s factory intake`를 실행한다. 에러는 fingerprint 표식(`<!-- factory:intake {"kind":"error","key":"<fp>"} -->`)으로 열린 이슈를 찾아 있으면 코멘트로 횟수를 갱신하고 없으면 `source:error`, `type:bug` 라벨로 새 이슈를 만든다. 피드백은 건마다 `source:feedback` 이슈를 만든다. 이슈 생성에 성공한 항목만 ack한다.
+- 스모크: `factory-smoke.yml`이 6시간마다 프로덕션에 **읽기 전용** 검사만 실행한다(Hurl: `/api/health`, 글 목록, 태그 목록 / Playwright: 홈 화면 렌더링). 프로덕션에 데이터를 만들지 않기 위해서다. 실패하면 `source:smoke` 이슈를 만들거나 열린 이슈에 코멘트를 추가하고, 다음 성공 때 열린 스모크 이슈에 "복구됨" 코멘트를 남긴다.
+- 트리아지: 봇이 연 이슈를 건너뛰는 P2 규칙에 예외를 둔다. `source:*` 라벨이 있는 봇 이슈는 트리아지한다. 유입 이슈의 본문(사용자 입력, 에러 메시지)은 신뢰하지 않는 입력으로 다룬다(5.4). 구현 착수에는 사람의 `@factory go`가 필요하다.
+
+#### 7.1.4 라이브 검증 재료
+
+- 사람이 PR로 작고 안전한 버그를 심는다. 조건: 기존 단위 테스트와 RealWorld Hurl 스위트가 잡지 못하고, 사용자가 관찰할 수 있으며, 데이터를 훼손하지 않는다. 이 PR과 버그 내용은 데모 리허설에 재사용할 수 있도록 런북에 기록한다.
 
 ### 7.2 P4 보고·자기개선
 
@@ -379,6 +401,17 @@ RealWorld Hurl 스위트는 업스트림 리포의 특정 커밋을 고정(pin)�
 - [x] 리뷰 변경 요청 3회 초과, 예산 초과 시 `needs-human`으로 전이된다(fake 어댑터로 재현). 근거: `scenario.test.ts` "escalates to needs-human when review requests changes more than three times", `implement.test.ts` "moves to needs-human without a PR when the agent exceeds its budget".
 - [x] 일일 상한과 실패율 차단기가 단위 테스트와 fake 시나리오로 검증된다. 근거: `guard.test.ts`, `common.test.ts`, `scenario.test.ts` "keeps triaging but stops starting implement runs after the breaker trips".
 - [x] 모든 런이 `factory-data`에 기록되고, 봇 PR 본문이 5.5 템플릿을 따른다. 근거: `factory-data`의 `runs/2026-10.jsonl`에 이슈 #5·#7·#9의 triage·command·implement·review·gate·deploy 런 13줄이 있다. PR #8 본문에 요약, 이유, 증거, 남은 위험, 위험 등급과 근거, 실행 정보 섹션이 있다.
+
+### P3 증거·유입 확장 — 완료 조건
+
+- [ ] 7.1.1: `risk-tier`·`policy`의 임시 분기가 제거되고, T2 PR에도 교차 리뷰 판정 코멘트가 남는다.
+- [ ] `evidence`가 main 보호 규칙의 필수 체크로 등록된다.
+- [ ] 심은 버그에 대한 버그 이슈가 `@factory go` 이후 사람 개입 없이 재현 테스트 작성 → `evidence` 통과 → 교차 리뷰 → 병합 → 배포까지 진행되고, 배포 후 버그가 프로덕션에서 사라진다.
+- [ ] 수정 전 코드에서도 통과하는 테스트만 가진 버그 PR은 `evidence`에서 실패한다(fake 시나리오 또는 사람 PR로 확인).
+- [ ] 프로덕션에서 의도적으로 발생시킨 에러가 30분 안에 `source:error` 이슈가 되고, 같은 에러가 반복되면 새 이슈 대신 코멘트로 횟수가 갱신된다.
+- [ ] 익명 피드백이 `source:feedback` 이슈가 되고, 같은 IP 해시의 4번째 요청은 10분 안에 429를 받는다.
+- [ ] 스모크 실패가 `source:smoke` 이슈가 되고(검증용 실패 주입), 복구 후 "복구됨" 코멘트가 남는다.
+- [ ] 유입 이슈 3종이 모두 트리아지되고, 사람의 `@factory go` 없이는 구현되지 않는다.
 
 ## 10. 미결 사항
 
