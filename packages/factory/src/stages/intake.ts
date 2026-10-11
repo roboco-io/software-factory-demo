@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Issue } from "../github/port";
-import { cell, codeCell, inline, quoteBlock, readMarker, writeMarker } from "../report/text";
+import { cell, codeCell, inline, codeBlock, readMarker, writeMarker } from "../report/text";
 import { isBot, record, runLink, stepRecord } from "./common";
 import type { Settings, StageDeps } from "./deps";
 
@@ -138,7 +138,7 @@ export function renderErrorIssue(
       "",
       "대표 메시지:",
       "",
-      quoteBlock(e.message || "(메시지 없음)"),
+      codeBlock(e.message || "(메시지 없음)"),
       "",
       `같은 fingerprint의 에러가 다시 기록되면 새 이슈 대신 이 이슈에 코멘트로 횟수를 갱신한다. ${GO_NOTE}${runLink(settings)}`,
       "",
@@ -168,7 +168,7 @@ export function renderFeedbackIssue(
       "",
       "본문:",
       "",
-      quoteBlock(f.body),
+      codeBlock(f.body),
       "",
       `${GO_NOTE}${runLink(settings)}`,
       "",

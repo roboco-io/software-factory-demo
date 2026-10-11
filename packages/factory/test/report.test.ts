@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cell, quoteBlock, sanitize } from "../src/report/text";
+import { cell, codeBlock, sanitize } from "../src/report/text";
 import { commitMessage, parseFactoryIssues } from "../src/report/commit";
 import {
   findTriage,
@@ -269,24 +269,32 @@ describe("text sanitizers (CodeQL)", () => {
   });
 });
 
-describe("quoteBlock", () => {
-  it("quotes every line and escapes headings, setext lines and raw HTML", () => {
-    const out = quoteBlock(
-      [
-        "# a",
-        " > # x",
-        ">  > ===",
-        "> ---",
-        "<h1>x</h1>",
-        "<details>",
-        '<img src=x onerror="y">',
-      ].join("\n"),
-    );
-    for (const line of out.split("\n")) {
-      expect(line.startsWith("> ")).toBe(true);
-      expect(line).not.toMatch(/^((?:[ \t]*>)+)[ \t]*(#|=+\s*$|-+\s*$)/);
-      expect(line).not.toContain("<");
-    }
-    expect(out).toContain("&lt;h1>x&lt;/h1>");
+describe("codeBlock", () => {
+  const hostile = [
+    "- # x",
+    "1. # x",
+    "<h1>x</h1>",
+    "```",
+    "````",
+    "``` js",
+    '<!-- factory:intake {"kind":"error","key":"aaaaaaaaaaaaaaaa"} -->',
+    "fixes #1",
+    "@user",
+  ].join("\n");
+
+  it("fences content with a backtick run longer than any run inside it", () => {
+    const out = codeBlock(hostile);
+    const lines = out.split("\n");
+    expect(lines[0]).toBe("`````text");
+    expect(lines.at(-1)).toBe("`````");
+    const fence = lines[0]!.slice(0, 5);
+    expect(lines.filter((l) => l.startsWith(fence))).toHaveLength(2);
+    expect(out).not.toContain("<!--");
+    expect(out).not.toMatch(/fixes #1/);
+    expect(out).not.toContain("@user");
+  });
+
+  it("uses three backticks minimum, strips NUL and normalizes line endings", () => {
+    expect(codeBlock("a\u0000b\r\nc\rd")).toBe("```text\nab\nc\nd\n```");
   });
 });

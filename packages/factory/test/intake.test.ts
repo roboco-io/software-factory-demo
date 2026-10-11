@@ -51,7 +51,7 @@ describe("runIntake", () => {
     expect(issue.labels).toEqual(["source:error", "type:bug"]);
     expect(issue.title).toBe("[에러] Error: article {n} failed");
     expect(issue.body).toContain(`<!-- factory:intake {"kind":"error","key":"${FP}"} -->`);
-    expect(issue.body).toContain("> Error: article {n} failed");
+    expect(issue.body).toContain("```text\nError: article {n} failed\n```");
     expect(acks).toEqual([{ errors: [FP], feedback: [] }]);
     expect(await h.deps.runs.since(new Date(0))).toMatchObject([
       { role: "intake", issue: 1, ok: true },
@@ -197,6 +197,10 @@ describe("runIntake hostile text and regressions", () => {
     "  ## indented heading",
     "setext",
     "===",
+    "- # list heading",
+    "1. # numbered heading",
+    "```",
+    "````",
     "> # nested",
     " > # spaced",
     ">  > ===",
@@ -205,12 +209,17 @@ describe("runIntake hostile text and regressions", () => {
     '<img src=x onerror="y">',
   ].join("\n");
 
-  function noHeadings(body: string) {
-    for (const line of body.split("\n")) {
-      expect(line).not.toMatch(/^(\s*>)*\s*#/);
-      expect(line).not.toMatch(/^(\s*>)*\s*(=+|-+)\s*$/);
-      expect(line).not.toMatch(/<(h1|details|img)/i);
+  // 신뢰할 수 없는 본문이 코드 펜스 하나 안에 완전히 갇혔는지 검사한다.
+  function fenced(body: string, expected: number) {
+    const lines = body.split("\n");
+    const opens = lines.filter((l) => /^`{3,}text$/.test(l));
+    expect(opens).toHaveLength(expected);
+    for (const open of opens) {
+      const fence = open.slice(0, -4);
+      expect(lines.filter((l) => l === fence)).toHaveLength(expected);
+      expect(lines.filter((l) => l.startsWith(fence) && l !== fence && l !== open)).toEqual([]);
     }
+    expect(body.match(/<!--/g)).toHaveLength(1);
   }
 
   it("links the closed issue when a fixed error comes back", async () => {
@@ -249,8 +258,8 @@ describe("runIntake hostile text and regressions", () => {
       expect(text).not.toContain("@serithemage");
       expect(text).not.toMatch(/(fixes|closes) #\d/);
     }
-    expect(issue.body.match(/<!--/g)).toHaveLength(1);
-    noHeadings(issue.body);
+    fenced(issue.body, 1);
+    expect(issue.body).toContain("````\n```\n");
     expect(findIntakeIssue([issue], h.deps.settings, "error", OTHER)).toBeNull();
     expect(findIntakeIssue([issue], h.deps.settings, "error", FP)?.number).toBe(1);
   });
@@ -261,10 +270,9 @@ describe("runIntake hostile text and regressions", () => {
     await runIntake(h.deps, fake({ errors: [], feedback: [fb({ body, path: "# p @a" })] }).client);
     const issue = await h.gh.getIssue(1);
     expect(issue.title.length).toBeLessThanOrEqual(70);
-    expect(issue.body.match(/<!--/g)).toHaveLength(1);
+    fenced(issue.body, 1);
     expect(issue.body).not.toContain("@serithemage");
     expect(issue.body).not.toMatch(/(fixes|closes) #\d/);
-    noHeadings(issue.body);
     expect(findIntakeIssue([issue], h.deps.settings, "error", OTHER)).toBeNull();
   });
 

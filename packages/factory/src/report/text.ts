@@ -50,14 +50,13 @@ export function demote(s: string): string {
     .join("\n");
 }
 
-// demote에 더해, 인용문 안에서도 ATX(`#`)·setext(`===`, `---`) 제목이 생기지 않게 이스케이프하고
-// `<`를 `&lt;`로 바꿔 원시 HTML(`<h1>`, `<details>`, `<img>`)이 렌더링되지 않게 한다.
-// 인용 표지 사이의 공백(` > # x`, `>  > ===`)도 같은 방식으로 처리한다.
-export function quoteBlock(s: string): string {
-  return demote(s)
-    .replace(/</g, "&lt;")
-    .replace(/^((?:[ \t]*>)+)([ \t]*)#/gm, "$1$2\\#")
-    .replace(/^((?:[ \t]*>)+)([ \t]*)(=+|-+)([ \t]*)$/gm, "$1$2\\$3$4");
+// 여러 줄 신뢰 불가 본문용: 코드 펜스 안에 가둬 마크다운·HTML이 해석되지 않게 한다.
+// 펜스는 내용 안의 가장 긴 백틱 연속보다 하나 더 길게(최소 3) 만들어 내용이 펜스를 닫지 못한다.
+export function codeBlock(s: string): string {
+  const content = neutralizeRefs(sanitize(s.replace(/\0/g, "").replace(/\r\n|\r/g, "\n")));
+  const longest = Math.max(0, ...(content.match(/`+/g) ?? []).map((m) => m.length));
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return `${fence}text\n${content}\n${fence}`;
 }
 
 // GitHub 닫기 키워드(close/fix/resolve + #N)와 @멘션을 무력화한다(ZWJ 삽입).
