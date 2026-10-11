@@ -45,6 +45,10 @@ rules:
       # 수집 엔드포인트의 토큰 검사는 에러·피드백 데이터의 인증 경계다.
       - "apps/api/src/middleware/intake.ts"
       - "apps/api/src/routes/intake.ts"
+      # 에러 기록·피드백 수신·전역 오류 처리기는 공개 이슈로 흘러가는 데이터의 입구다.
+      - "apps/api/src/lib/error-events.ts"
+      - "apps/api/src/routes/feedback.ts"
+      - "apps/api/src/index.ts"
   - tier: T0
     patterns:
       - "docs/**"
