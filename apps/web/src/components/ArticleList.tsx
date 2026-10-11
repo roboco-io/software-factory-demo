@@ -36,7 +36,7 @@ export function ArticleList({ query }: { query: string }) {
   if (!data) return <div className="article-preview">Loading articles...</div>;
   if (data.articles.length === 0)
     return <div className="article-preview">No articles are here... yet.</div>;
-  const pages = Math.floor(data.articlesCount / PAGE);
+  const pages = Math.ceil(data.articlesCount / PAGE);
   return (
     <>
       {data.articles.map((a) => (
