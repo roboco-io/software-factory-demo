@@ -15,3 +15,4 @@
 {"ts":"2026-10-11T16:47:05.622Z","issue":14,"pr":null,"role":"intake","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":0}
 {"ts":"2026-10-11T16:49:09.631Z","issue":14,"pr":null,"role":"triage","engine":"pi","model":"deepseek/deepseek-flash","ok":true,"turns":9,"costUsd":0.011247252,"durationMs":33119,"failureReason":null,"round":0}
 {"ts":"2026-10-11T17:00:49.361Z","issue":17,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
+{"ts":"2026-10-11T17:02:34.936Z","issue":17,"pr":null,"role":"smoke","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":0}
