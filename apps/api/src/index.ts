@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import type { AppEnv } from "./env";
 import { ApiError, ROUTE_NOT_FOUND } from "./lib/errors";
 import { deferredRouter } from "./routes/deferred";
+import { feedbackRouter } from "./routes/feedback";
 import { articlesRouter } from "./routes/articles";
 import { commentsRouter } from "./routes/comments";
 import { profilesRouter } from "./routes/profiles";
@@ -28,6 +29,7 @@ router.route("/", profilesRouter);
 router.route("/", articlesRouter);
 router.route("/", commentsRouter);
 router.route("/", tagsRouter);
+router.route("/", feedbackRouter);
 
 app.route("/api", router);
 

@@ -34,6 +34,7 @@ describe("schema", () => {
     expect(idx.results.map((r) => r.name)).toEqual(
       expect.arrayContaining([
         "error_events_last_seen_idx",
+        "feedback_created_idx",
         "feedback_ip_created_idx",
         "feedback_pending_idx",
       ]),

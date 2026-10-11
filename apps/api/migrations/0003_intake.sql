@@ -20,3 +20,4 @@ CREATE TABLE feedback (
 );
 CREATE INDEX feedback_ip_created_idx ON feedback (ip_hash, created_at);
 CREATE INDEX feedback_pending_idx ON feedback (acked_at, id);
+CREATE INDEX feedback_created_idx ON feedback (created_at);
