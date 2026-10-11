@@ -31,6 +31,27 @@ describe("scrubEnv", () => {
     expect(env.GITHUB_TOKEN).toBeUndefined();
   });
 
+  it("removes unlisted secret-like names but keeps ordinary variables", () => {
+    const env = scrubEnv({
+      NODE_AUTH_TOKEN: "a",
+      CLAUDE_CODE_OAUTH_TOKEN: "b",
+      GEMINI_API_KEY: "c",
+      CF_API_TOKEN: "d",
+      AWS_SECRET_ACCESS_KEY: "e",
+      PATH: "/usr/bin",
+      HOME: "/h",
+      CI: "true",
+    });
+    expect(env).toEqual({ PATH: "/usr/bin", HOME: "/h", CI: "true" });
+  });
+
+  it("honors keep for pattern-matched names", () => {
+    expect(scrubEnv({ GEMINI_API_KEY: "c", PATH: "p" }, ["GEMINI_API_KEY"])).toEqual({
+      GEMINI_API_KEY: "c",
+      PATH: "p",
+    });
+  });
+
   it("maps engines to their key variables", () => {
     expect(ENGINE_KEYS).toEqual({
       claude: "ANTHROPIC_API_KEY",

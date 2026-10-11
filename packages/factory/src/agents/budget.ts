@@ -45,8 +45,8 @@ export async function runWithBudget(
   });
   let result: AgentResult;
   try {
-    const run = adapter
-      .run({ ...task, signal: controller.signal })
+    const run = Promise.resolve()
+      .then(() => adapter.run({ ...task, signal: controller.signal }))
       .catch((e: unknown) => failedResult("unknown", "engine_error", errorMessage(e)));
     result = await Promise.race([run, timeout]);
   } finally {
@@ -128,6 +128,9 @@ export async function runStructured<T>(
     if (parsed.ok) {
       const { failureReason: _ignored, ...rest } = total;
       void _ignored;
+      // 재시도 포함 합산 결과가 역할 예산을 넘으면 실패로 본다.
+      const limited = enforceLimits({ ...rest, ok: true }, task.budget);
+      if (!limited.ok) return { result: { ...total, ...limited }, value: null };
       return { result: { ...rest, ok: true, structured: parsed.value }, value: parsed.value };
     }
     prompt = `${task.prompt}\n\n이전 응답이 요구한 JSON 스키마를 만족하지 않았다(${parsed.error}). 설명 없이 JSON 객체 하나만 다시 출력하라.`;

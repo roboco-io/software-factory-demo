@@ -31,8 +31,11 @@ export function scrubEnv(
   for (const [key, value] of Object.entries(base)) {
     if (value === undefined) continue;
     // INPUT_*는 액션 입력(예: App 개인 키), ACTIONS_*는 러너 런타임·OIDC 토큰이다.
+    // 목록에 없는 이름도 패턴으로 제거한다(fail-closed).
     const secret =
-      (SECRET_ENV as readonly string[]).includes(key) || /^(INPUT_|ACTIONS_)/.test(key);
+      (SECRET_ENV as readonly string[]).includes(key) ||
+      /^(INPUT_|ACTIONS_|AWS_|CLOUDFLARE_|CF_)/.test(key) ||
+      /(TOKEN|SECRET|PASSWORD|PRIVATE[_-]?KEY|API[_-]?KEY|CREDENTIAL)/i.test(key);
     if (secret && !keep.includes(key)) continue;
     out[key] = value;
   }

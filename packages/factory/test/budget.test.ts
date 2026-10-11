@@ -42,6 +42,17 @@ describe("runWithBudget", () => {
     expect(cost.failureReason).toBe("budget");
   });
 
+  it("converts a synchronous throw from adapter.run into engine_error", async () => {
+    const boom: AgentAdapter = {
+      name: "fake",
+      run: () => {
+        throw new Error("sync boom");
+      },
+    };
+    const r = await runWithBudget(boom, task());
+    expect(r).toMatchObject({ ok: false, failureReason: "engine_error", summary: "sync boom" });
+  });
+
   it("measures duration with the injected clock", async () => {
     let t = 1_000;
     const r = await runWithBudget(createFakeAdapter([{}]), task(), () => (t += 250));
@@ -71,6 +82,16 @@ describe("runStructured", () => {
     expect(r.value?.verdict).toBe("REQUEST_CHANGES");
     expect(r.result.turns).toBe(3);
     expect(a.calls[1]?.prompt).toContain("JSON 스키마를 만족하지 않았다");
+  });
+
+  it("fails with max_turns when each attempt is within budget but the sum is not", async () => {
+    const a = createFakeAdapter([
+      { result: { summary: "{}", turns: 2 } },
+      { result: { summary: '{"verdict":"APPROVE"}', turns: 2 } },
+    ]);
+    const r = await runStructured(a, task({ budget: { maxTurns: 3, timeoutMs: 1_000 } }), Schema);
+    expect(r.value).toBeNull();
+    expect(r.result).toMatchObject({ ok: false, failureReason: "max_turns", turns: 4 });
   });
 
   it("fails with invalid_output after two invalid answers", async () => {
