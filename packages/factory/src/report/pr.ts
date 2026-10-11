@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ENGINES } from "../agents/types";
 import type { RiskResult } from "../policy/risk";
-import { readMarker, sanitize, writeMarker } from "./text";
+import { cell, codeCell, demote, inline, readMarker, writeMarker } from "./text";
 
 export const PrMetaSchema = z.object({
   issue: z.number().int().positive(),
@@ -44,7 +44,7 @@ export function renderPrBody(r: PrReport): string {
     .slice(0, MAX_FILE_ROWS)
     .map(
       (f) =>
-        `| \`${sanitize(f.file)}\` | ${f.tier} | ${f.pattern ? `\`${f.pattern}\`` : "기본 등급"} |`,
+        `| \`${codeCell(f.file)}\` | ${f.tier} | ${f.pattern ? `\`${codeCell(f.pattern)}\`` : "기본 등급"} |`,
     );
   const more =
     r.risk.files.length > MAX_FILE_ROWS ? [`외 ${r.risk.files.length - MAX_FILE_ROWS}개 파일`] : [];
@@ -55,33 +55,33 @@ export function renderPrBody(r: PrReport): string {
   return [
     "## 요약",
     "",
-    sanitize(r.summary.trim()) || "(에이전트 요약 없음)",
+    (r.summary.trim() ? demote(r.summary.trim()) : "") || "(에이전트 요약 없음)",
     "",
     "## 이유",
     "",
-    `Refs #${r.meta.issue} — ${sanitize(r.issueTitle)}`,
+    `Refs #${r.meta.issue} — ${inline(r.issueTitle)}`,
     "",
     "수용 기준:",
     ...(r.acceptanceCriteria.length > 0
-      ? r.acceptanceCriteria.map((c) => `- ${sanitize(c)}`)
+      ? r.acceptanceCriteria.map((c) => `- ${inline(c)}`)
       : ["- (트리아지 수용 기준 없음)"]),
     "",
     "## 증거",
     "",
     "| 로컬 검사 | 결과 |",
     "|---|---|",
-    ...r.checks.map((c) => `| \`${c.name}\` | ${c.ok ? "통과" : "실패"} |`),
+    ...r.checks.map((c) => `| \`${codeCell(c.name)}\` | ${c.ok ? "통과" : "실패"} |`),
     "",
     "필수 CI 체크(typecheck, lint, unit, realworld-api, e2e, risk-tier)는 이 PR에서 다시 실행된다.",
-    `프리뷰: ${r.preview}`,
+    `프리뷰: ${inline(r.preview)}`,
     "",
     "## 남은 위험",
     "",
     ...(r.risks.length > 0
-      ? r.risks.map((x) => `- ${sanitize(x)}`)
+      ? r.risks.map((x) => `- ${inline(x)}`)
       : ["- 에이전트가 보고한 남은 위험 없음"]),
     "",
-    "## 위험 등급",
+    "## 위험 등급과 근거",
     "",
     `**${r.risk.tier}** — 변경 파일 중 가장 높은 등급이다(factory/risk-policy.yml). 등급을 정한 파일:`,
     "",
@@ -94,7 +94,7 @@ export function renderPrBody(r: PrReport): string {
     "",
     "| 엔진 | 모델 | 턴 | 소요 시간 | 추정 비용 |",
     "|---|---|---|---|---|",
-    `| ${r.run.engine} | ${r.run.model} | ${r.run.turns} | ${formatDuration(r.run.durationMs)} | ${cost} |`,
+    `| ${cell(r.run.engine)} | ${cell(r.run.model)} | ${r.run.turns} | ${formatDuration(r.run.durationMs)} | ${cost} |`,
     "",
     writeMarker(META, r.meta),
   ].join("\n");

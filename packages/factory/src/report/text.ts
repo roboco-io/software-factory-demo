@@ -21,3 +21,43 @@ export function readMarker<T>(body: string, name: string, schema: z.ZodType<T>):
     return null;
   }
 }
+
+// 표 셀·한 줄 필드용: 줄바꿈을 공백으로, 표 구분자 `|`를 이스케이프한다.
+export function cell(s: string): string {
+  return neutralizeRefs(sanitize(s)).replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+}
+
+// 코드 span(`...`) 안에 넣을 값: 백틱을 제거하고 cell 규칙을 적용한다.
+export function codeCell(s: string): string {
+  return cell(s).replace(/`/g, "'");
+}
+
+// 한 줄 필드(목록 항목·제목): 줄바꿈을 공백으로 바꾸고 표식·참조를 무력화한다.
+export function inline(s: string): string {
+  return neutralizeRefs(sanitize(s))
+    .replace(/\s*\r?\n\s*/g, " ")
+    .trim();
+}
+
+// 여러 줄 텍스트를 인용문으로 내려 제목·섹션을 만들지 못하게 한다.
+export function demote(s: string): string {
+  return neutralizeRefs(sanitize(s))
+    .split(/\r?\n/)
+    .map((l) => `> ${l}`)
+    .join("\n");
+}
+
+// GitHub 닫기 키워드(close/fix/resolve + #N)와 @멘션을 무력화한다(ZWJ 삽입).
+export function neutralizeRefs(text: string): string {
+  return text
+    .replace(
+      /\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)(\s*:?\s*)((?:[\w.-]+\/[\w.-]+)?#\d+)/gi,
+      (_m, kw: string, sp: string, ref: string) => `${kw}\u200d${sp}${ref}`,
+    )
+    .replace(/@(?=[A-Za-z0-9])/g, "@\u200d");
+}
+
+// HTML 주석(닫히지 않은 것 포함)을 제거한다.
+export function stripComments(text: string): string {
+  return text.replace(/<!--[\s\S]*?(?:-->|$)/g, "");
+}

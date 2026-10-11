@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Comment, Review } from "../github/port";
 import { TIERS } from "../policy/risk";
-import { readMarker, sanitize, writeMarker } from "./text";
+import { cell, codeCell, inline, readMarker, sanitize, writeMarker } from "./text";
 
 export const TriageSchema = z.object({
   type: z.enum(["feature", "bug", "docs", "feedback"]),
@@ -47,11 +47,11 @@ export function renderTriageComment(t: Triage, run: { engine: string; model: str
     `- 분류: \`type:${t.type}\``,
     `- 예상 위험 등급: **${t.riskTier}** (최종 등급은 PR의 변경 파일로 다시 판정한다)`,
     `- 중복 후보: ${t.duplicateOf ? `#${t.duplicateOf}` : "없음"}`,
-    `- 요약: ${sanitize(t.summary)}`,
+    `- 요약: ${inline(t.summary)}`,
     "",
     "**수용 기준**",
     "",
-    ...t.acceptanceCriteria.map((c) => `- [ ] ${sanitize(c)}`),
+    ...t.acceptanceCriteria.map((c) => `- [ ] ${inline(c)}`),
     "",
     `<sub>${run.engine}/${run.model}. 구현을 시작하려면 리포 쓰기 권한자가 \`@factory go\`를 코멘트로 남긴다.</sub>`,
     writeMarker(TRIAGE_DATA, t),
@@ -68,10 +68,6 @@ export function findTriage(comments: Comment[], botLogin: string): Triage | null
   return null;
 }
 
-function cell(s: string): string {
-  return sanitize(s).replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
-}
-
 export function renderReviewBody(
   r: ReviewOutput,
   ctx: { sha: string; engine: string; model: string },
@@ -79,7 +75,7 @@ export function renderReviewBody(
   const title = r.verdict === "APPROVE" ? "승인(APPROVE)" : "변경 요청(REQUEST_CHANGES)";
   const rows = r.findings.map(
     (f) =>
-      `| ${f.severity} | \`${cell(f.file)}${f.line ? `:${f.line}` : ""}\` | ${cell(f.message)} |`,
+      `| ${f.severity} | \`${codeCell(f.file)}${f.line ? `:${f.line}` : ""}\` | ${cell(f.message)} |`,
   );
   return [
     `### 팩토리 교차 리뷰: ${title}`,
@@ -99,9 +95,9 @@ export function renderReviewBody(
 export function latestVerdict(reviews: Review[], botLogin: string, sha: string): Verdict | null {
   for (let i = reviews.length - 1; i >= 0; i--) {
     const r = reviews[i]!;
-    if (r.author !== botLogin) continue;
+    if (r.author !== botLogin || r.state === "DISMISSED") continue;
     const v = readMarker(r.body, VERDICT, VerdictSchema);
-    if (v && v.sha === sha) return { ...v, body: r.body };
+    if (v && v.sha === sha && r.commitId === v.sha) return { ...v, body: r.body };
   }
   return null;
 }
