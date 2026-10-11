@@ -109,6 +109,27 @@ describe("createGit", () => {
     await expect(port.revParse("--all")).rejects.toThrow(/invalid ref/);
   });
 
+  it("resetSoft keeps changes staged so a recommit replaces the author and message", async () => {
+    const { work, port } = await setup();
+    const base = await port.revParse("origin/main");
+    await port.checkoutNewBranch("factory/issue-7", base);
+    writeFileSync(path.join(work, "d.ts"), "d\n");
+    git(work, "add", "-A");
+    git(
+      work,
+      "commit",
+      "--author=Mallory <m@example.com>",
+      "-m",
+      "evil\n\nCo-authored-by: X <x@y.z>",
+    );
+    await port.resetSoft(base);
+    await port.commitAll("trusted");
+    expect(git(work, "log", "-1", "--format=%an|%s")).toBe("bot|trusted");
+    expect(git(work, "rev-list", "--count", `${base}..HEAD`)).toBe("1");
+    expect(await port.filesAgainst(base)).toEqual(["d.ts"]);
+    await expect(port.resetSoft("HEAD~1")).rejects.toThrow(/invalid sha/);
+  });
+
   it("returns false on a rebase conflict and leaves no rebase in progress", async () => {
     const { root, origin, work, port } = await setup();
     await port.checkoutNewBranch("factory/issue-4", "origin/main");

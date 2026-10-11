@@ -89,6 +89,7 @@ export class FakeGit implements GitPort {
   async revParse(): Promise<string> {
     return this.baseSha;
   }
+  async resetSoft(): Promise<void> {}
   async isAncestor(): Promise<boolean> {
     return this.descendsFromBase;
   }

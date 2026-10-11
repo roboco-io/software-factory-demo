@@ -13,6 +13,14 @@ import {
 } from "../state/machine";
 import type { Settings, StageDeps } from "./deps";
 
+export const FailureReasonSchema = z.enum([
+  "max_turns",
+  "timeout",
+  "budget",
+  "engine_error",
+  "invalid_output",
+]);
+
 // agent VM이 만든 결과 파일 안의 에이전트 실행 결과를 검증하는 스키마.
 export const TimedResultSchema = z.object({
   ok: z.boolean(),
@@ -21,9 +29,7 @@ export const TimedResultSchema = z.object({
   turns: z.number().int().min(0),
   costUsd: z.number().min(0).optional(),
   usage: z.object({ inputTokens: z.number().min(0), outputTokens: z.number().min(0) }),
-  failureReason: z
-    .enum(["max_turns", "timeout", "budget", "engine_error", "invalid_output"])
-    .optional(),
+  failureReason: FailureReasonSchema.optional(),
   durationMs: z.number().min(0),
 });
 

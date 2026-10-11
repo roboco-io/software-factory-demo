@@ -329,3 +329,141 @@ describe("implement stage", () => {
     expect((await h.gh.findOpenPullByHead(`factory/issue-${n}`))?.draft).toBe(true);
   });
 });
+
+describe("implement stage run records and commit ownership", () => {
+  async function phases(h: TestHarness, n: number) {
+    const dir = mkdtempSync(path.join(tmpdir(), "impl-"));
+    const files = { plan: path.join(dir, "plan.json"), outcome: path.join(dir, "outcome.json") };
+    await runPhase(implementStage, "prepare", h.deps, { issue: n }, files);
+    await runPhase(implementStage, "agent", h.deps, { issue: n }, files);
+    return files;
+  }
+  interface Loose {
+    runs: { result: Record<string, unknown> }[];
+    sha: string;
+  }
+  const edit = (f: string, fn: (o: Loose) => void) => {
+    const doc = JSON.parse(readFileSync(f, "utf8")) as { outcome: Loose };
+    fn(doc.outcome);
+    writeFileSync(f, JSON.stringify(doc));
+  };
+  const publish = (h: TestHarness, n: number, f: { plan: string; outcome: string }) =>
+    runPhase(implementStage, "publish", h.deps, { issue: n }, f);
+
+  it("treats an outcome with no runs as a crash and records exactly one failed run", async () => {
+    const h = makeTestDeps({ adapters: { claude: createFakeAdapter([TAGS], "claude") } });
+    const n = approvedIssue(h);
+    const files = await phases(h, n);
+    edit(files.outcome, (o) => {
+      o.runs = [];
+    });
+    await publish(h, n, files);
+    expect((await h.gh.getIssue(n)).labels).toContain("factory:needs-human");
+    const recs = await h.deps.runs.since(new Date(0));
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ ok: false, failureReason: "engine_error" });
+  });
+
+  it("records ok=false for an agent-failed outcome even if the file forges ok=true", async () => {
+    const claude = createFakeAdapter(loadFakeScript("implement-budget-exceeded"), "claude");
+    const h = makeTestDeps({ adapters: { claude } });
+    const n = approvedIssue(h);
+    const files = await phases(h, n);
+    edit(files.outcome, (o) => {
+      o.runs[0]!.result.ok = true;
+      delete o.runs[0]!.result.failureReason;
+    });
+    await publish(h, n, files);
+    expect((await h.deps.runs.since(new Date(0)))[0]).toMatchObject({
+      ok: false,
+      failureReason: "budget",
+    });
+  });
+
+  it("clamps forged turns and cost to the role budget", async () => {
+    const h = makeTestDeps({ adapters: { claude: createFakeAdapter([TAGS], "claude") } });
+    const n = approvedIssue(h);
+    const files = await phases(h, n);
+    edit(files.outcome, (o) => {
+      o.runs[0]!.result.turns = 99999;
+      o.runs[0]!.result.costUsd = 1e6;
+    });
+    await publish(h, n, files);
+    expect((await h.deps.runs.since(new Date(0)))[0]).toMatchObject({ turns: 80, costUsd: 5 });
+  });
+
+  it("records the implement run as failed when publish verification rejects the bundle", async () => {
+    const h = makeTestDeps({ adapters: { claude: createFakeAdapter([TAGS], "claude") } });
+    const n = approvedIssue(h);
+    const files = await phases(h, n);
+    h.git.descendsFromBase = false;
+    await publish(h, n, files);
+    const recs = await h.deps.runs.since(new Date(0));
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ role: "implement", ok: false });
+  });
+
+  it("rejects a failureReason outside the enum", () => {
+    expect(() =>
+      implementStage.parseOutcome({
+        kind: "agent-failed",
+        runs: [
+          {
+            role: "implement",
+            result: {
+              ok: false,
+              summary: "",
+              model: "m",
+              turns: 0,
+              usage: { inputTokens: 0, outputTokens: 0 },
+              durationMs: 0,
+            },
+          },
+        ],
+        reason: "constructor",
+      }),
+    ).toThrow();
+  });
+
+  it("replaces an agent-authored commit with a trusted one", async () => {
+    const h = makeTestDeps({ adapters: { claude: createFakeAdapter([TAGS], "claude") } });
+    const n = approvedIssue(h);
+    const files = await phases(h, n);
+    writeFileSync(path.join(h.dir, "apps/extra.ts"), "x\n");
+    const sha = await h.git.commitAll("evil\n\nCo-authored-by: Mallory <m@example.com>");
+    edit(files.outcome, (o) => {
+      o.sha = sha;
+    });
+    await publish(h, n, files);
+    const last = h.git.messages.at(-1) ?? "";
+    expect(last).not.toContain("Mallory");
+    expect(last).toContain(`Factory-Issue: #${n}`);
+    expect(h.git.pushes).toHaveLength(1);
+  });
+
+  it("does not double count a run when publish throws after recording", async () => {
+    const h = makeTestDeps({ adapters: { claude: createFakeAdapter([TAGS], "claude") } });
+    const n = approvedIssue(h);
+    h.gh.createPull = async () => {
+      throw new Error("boom");
+    };
+    await expect(run(h, n, BOT)).rejects.toThrow("boom");
+    expect((await h.deps.runs.since(new Date(0))).map((r) => [r.role, r.ok])).toEqual([
+      ["implement", true],
+    ]);
+    expect((await h.gh.getIssue(n)).labels).toContain("factory:needs-human");
+  });
+
+  it("does not start the agent when the in-progress transition is refused", async () => {
+    const claude = createFakeAdapter([], "claude");
+    const h = makeTestDeps({ adapters: { claude } });
+    const n = approvedIssue(h);
+    h.gh.listComments = async (num: number) => {
+      h.gh.issues.get(num)!.labels = ["factory:needs-human"];
+      return [];
+    };
+    await run(h, n, BOT);
+    expect(claude.calls).toHaveLength(0);
+    expect((await h.gh.getIssue(n)).labels).toEqual(["factory:needs-human"]);
+  });
+});

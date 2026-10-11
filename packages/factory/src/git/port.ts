@@ -22,6 +22,8 @@ export interface GitPort {
   revParse(ref: string): Promise<string>;
   // base(40자 SHA)가 HEAD의 조상(또는 같은 커밋)이면 true. 객체가 없거나 오류면 false(fail closed).
   isAncestor(base: string): Promise<boolean>;
+  // HEAD를 sha(40자)로 되돌리되 변경 내용은 스테이지에 남긴다. publish가 커밋을 직접 다시 만들 때 쓴다.
+  resetSoft(sha: string): Promise<void>;
 }
 
 function splitZ(out: string): string[] {
@@ -135,6 +137,10 @@ export function createGit(
     async revParse(ref) {
       assertRef("ref", ref, START_POINT);
       return (await git("rev-parse", ["rev-parse", "--verify", `${ref}^{commit}`])).stdout.trim();
+    },
+    async resetSoft(sha) {
+      assertRef("sha", sha, SHA);
+      await git("reset", ["reset", "--soft", sha]);
     },
     async isAncestor(baseSha) {
       assertRef("sha", baseSha, SHA);

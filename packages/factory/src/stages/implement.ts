@@ -11,6 +11,7 @@ import { codeCell } from "../report/text";
 import { canTransition, stateLabel } from "../state/machine";
 import {
   ROUND_PREFIX,
+  FailureReasonSchema,
   TimedResultSchema,
   agentRecord,
   blockedReason,
@@ -25,6 +26,7 @@ import {
   record,
   runLink,
 } from "./common";
+import type { StageDeps } from "./deps";
 import type { PhasedStage } from "./phased";
 import { checkWorkdir, commitType, inspectChanges, previewText, sumRuns } from "./worktree";
 
@@ -53,16 +55,19 @@ export interface AgentRun {
   result: TimedResult;
 }
 
+// 실행 기록은 일일 상한과 차단기의 입력이다. 첫 기록은 반드시 implement, 둘째는 fix여야 한다.
 const RunsSchema = z
   .array(z.object({ role: z.enum(["implement", "fix"]), result: TimedResultSchema }))
-  .max(2);
+  .min(1)
+  .max(2)
+  .refine((runs) => runs.every((r, i) => r.role === (i === 0 ? "implement" : "fix")));
 
 // agent VM이 쓴 결과 파일은 신뢰할 수 없다. 위험 등급과 변경 파일은 담지 않는다(publish가 번들에서 다시 계산한다).
 const OutcomeSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("agent-failed"),
     runs: RunsSchema,
-    reason: z.string().max(100),
+    reason: FailureReasonSchema,
   }),
   z.object({ kind: z.literal("no-changes"), runs: RunsSchema }),
   z.object({
@@ -84,6 +89,54 @@ const OutcomeSchema = z.discriminatedUnion("kind", [
 export type ImplementOutcome = z.infer<typeof OutcomeSchema>;
 
 const MAX_LISTED_FILES = 20;
+
+// 이미 실행 기록을 남긴 계획. publish 도중 예외가 나도 crashed()가 같은 런을 다시 세지 않게 한다.
+const RECORDED = new WeakSet<ImplementPlan>();
+
+// 보고된 ok·턴·비용은 에이전트 VM이 쓴 값이다. ok는 검증된 결과로 정하고, 턴과 비용은 역할 예산으로 자른다.
+async function recordRuns(
+  deps: StageDeps,
+  plan: ImplementPlan,
+  out: ImplementOutcome,
+  implementOk: boolean,
+  fixOk: boolean,
+): Promise<void> {
+  if (RECORDED.has(plan)) return;
+  RECORDED.add(plan);
+  for (const [i, r] of out.runs.entries()) {
+    const ok = i === 0 ? implementOk : fixOk;
+    const budget = i === 0 ? plan.budget : plan.fixBudget;
+    const { failureReason: _reported, costUsd, ...rest } = r.result;
+    void _reported;
+    const result: TimedResult = {
+      ...rest,
+      ok,
+      turns: Math.min(r.result.turns, budget.maxTurns),
+      durationMs: Math.min(r.result.durationMs, budget.timeoutMs),
+    };
+    if (costUsd !== undefined) {
+      result.costUsd = budget.maxUsd === undefined ? costUsd : Math.min(costUsd, budget.maxUsd);
+    }
+    if (!ok) {
+      result.failureReason =
+        i === 0 && out.kind === "agent-failed"
+          ? out.reason
+          : (r.result.failureReason ?? "engine_error");
+    }
+    await record(
+      deps,
+      agentRecord(
+        i === 0 ? "implement" : "fix",
+        plan.engine,
+        plan.model,
+        result,
+        plan.issue,
+        null,
+        0,
+      ),
+    );
+  }
+}
 
 function fileList(files: string[]): string {
   const shown = files.slice(0, MAX_LISTED_FILES).map((f) => `\`${codeCell(f)}\``);
@@ -136,13 +189,15 @@ export const implementStage: PhasedStage<ImplementArgs, ImplementPlan, Implement
     });
     await deps.git.fetch("main");
     const baseSha = await deps.git.revParse("origin/main");
-    await moveTo(
+    // 위 검사 이후 라벨이 바뀌어 전이가 거부되면(경합) 에이전트를 돌리지 않는다.
+    const started = await moveTo(
       deps,
       args.issue,
       "in-progress",
       "implement",
       `구현을 시작했다. 엔진 ${engine}/${model}, 브랜치 \`${branch}\`, 예산 ${budgetText(assignment.implement.budget)}.${runLink(deps.settings)}`,
     );
+    if (!started) return null;
     return {
       issue: args.issue,
       title: issue.title,
@@ -222,38 +277,49 @@ export const implementStage: PhasedStage<ImplementArgs, ImplementPlan, Implement
   },
 
   async publish(deps, plan, out) {
-    for (const r of out.runs) {
-      await record(
-        deps,
-        agentRecord(r.role, plan.engine, plan.model, r.result, plan.issue, null, 0),
-      );
-    }
-    // agent 단계 동안 사람이 상태를 바꿨으면(예: @factory stop) push도 PR도 만들지 않는다.
     const { state } = await readState(deps.gh, plan.issue);
-    if (state !== "in-progress") {
-      deps.log(`implement: #${plan.issue} is ${state}; skipping publish`);
-      return;
-    }
+    const inProgress = state === "in-progress";
     const toHuman = (reason: string) =>
       moveTo(deps, plan.issue, "needs-human", "implement", `${reason}${runLink(deps.settings)}`);
+    // 에이전트 단계 동안 사람이 상태를 바꿨으면(예: @factory stop) push도 PR도 만들지 않는다.
+    const skip = async (implementOk: boolean, fixOk: boolean): Promise<boolean> => {
+      await recordRuns(deps, plan, out, implementOk, fixOk);
+      if (inProgress) return false;
+      deps.log(`implement: #${plan.issue} is ${state}; skipping publish`);
+      return true;
+    };
     if (out.kind === "agent-failed") {
+      if (await skip(false, false)) return;
       await toHuman(
         `구현 에이전트가 실패했다(사유: ${failureText(out.reason)}, 예산 ${budgetText(plan.budget)}). 사람이 확인한 뒤 \`@factory retry\`로 다시 시작할 수 있다.`,
       );
       return;
     }
     if (out.kind === "no-changes") {
+      if (await skip(true, true)) return;
       await toHuman(
         "구현 에이전트가 파일을 바꾸지 않았다. 이슈가 구현 가능한 요청인지 사람이 확인한다.",
       );
       return;
     }
     if (out.kind === "forbidden-paths") {
+      if (await skip(false, false)) return;
       await toHuman(
         `구현 역할이 수정할 수 없는 T3 경로를 바꿔 변경 전체를 버렸다: ${fileList(out.files)}. 팩토리 규칙·워크플로 변경은 사람이 직접 한다.`,
       );
       return;
     }
+    // 검사 결과는 에이전트 VM이 보고한 값이다. 세 검사가 모두 있고 통과했을 때만 통과로 본다.
+    // 실제 병합 게이트는 CI 필수 체크가 맡는다.
+    const checksOk = CHECK_SCRIPTS.every((name) => out.checks.some((c) => c.name === name && c.ok));
+    if (!inProgress) {
+      await skip(true, checksOk);
+      return;
+    }
+    const rejected = async (reason: string) => {
+      await recordRuns(deps, plan, out, false, false);
+      await toHuman(reason);
+    };
     const token = deps.settings.token;
     if (!token) throw new Error("implement publish requires FACTORY_TOKEN");
 
@@ -263,27 +329,35 @@ export const implementStage: PhasedStage<ImplementArgs, ImplementPlan, Implement
       await deps.git.importBundle(deps.settings.bundlePath, plan.branch);
     const head = await deps.git.headSha();
     if (head !== out.sha) {
-      await toHuman(
+      await rejected(
         "publish 단계의 재검증에서 변경이 거부되었다(결과 파일의 커밋 SHA가 번들의 head와 다르다).",
       );
       return;
     }
     if (!(await deps.git.isAncestor(plan.baseSha))) {
-      await toHuman(
+      await rejected(
         `publish 단계의 재검증에서 변경이 거부되었다(번들 head가 준비 시점 main 커밋 ${plan.baseSha.slice(0, 12)}의 후손이 아니다).`,
       );
       return;
     }
     const verified = await inspectChanges(deps, "origin/main");
     if (verified.forbidden.length > 0 || verified.files.length === 0) {
-      await toHuman(
+      await rejected(
         `publish 단계의 재검증에서 변경이 거부되었다(T3 파일: ${fileList(verified.forbidden) || "없음"}, 변경 파일 수: ${verified.files.length}).`,
       );
       return;
     }
-    // 검사 결과는 에이전트 VM이 보고한 값이다. 세 검사가 모두 있고 통과했을 때만 통과로 본다.
-    // 실제 병합 게이트는 CI 필수 체크가 맡는다.
-    const checksOk = CHECK_SCRIPTS.every((name) => out.checks.some((c) => c.name === name && c.ok));
+    // 에이전트가 만든 커밋(작성자·메시지)은 믿지 않는다. 검증을 통과한 변경을 신뢰하는 메시지·봇 신원으로 다시 커밋한다.
+    await recordRuns(deps, plan, out, true, checksOk);
+    await deps.git.resetSoft(plan.baseSha);
+    await deps.git.commitAll(
+      commitMessage(
+        `${plan.kind}: ${plan.title} (#${plan.issue})`,
+        out.summary,
+        { engine: plan.engine, model: plan.model },
+        plan.issue,
+      ),
+    );
     await deps.git.push(plan.branch, token);
     const meta: PrMeta = {
       issue: plan.issue,
@@ -356,7 +430,8 @@ export const implementStage: PhasedStage<ImplementArgs, ImplementPlan, Implement
   },
 
   async crashed(deps, plan) {
-    await record(deps, crashRecord("implement", plan));
+    // publish가 이미 이 런의 실행 기록을 남겼다면 실패 기록을 또 남기지 않는다.
+    if (!RECORDED.has(plan)) await record(deps, crashRecord("implement", plan));
     await moveTo(
       deps,
       plan.issue,
