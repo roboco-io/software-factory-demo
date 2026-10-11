@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import type { AppEnv } from "./env";
 import { ApiError } from "./lib/errors";
 import { deferredRouter } from "./routes/deferred";
+import { articlesRouter } from "./routes/articles";
 import { profilesRouter } from "./routes/profiles";
 import { usersRouter } from "./routes/users";
 
@@ -22,6 +23,7 @@ router.get("/health", (c) => c.json({ status: "ok" }));
 router.route("/", deferredRouter);
 router.route("/", usersRouter);
 router.route("/", profilesRouter);
+router.route("/", articlesRouter);
 
 app.route("/api", router);
 
