@@ -39,10 +39,25 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
 - 피드백 유입: 웹 푸터의 "피드백" 버튼으로 익명 의견을 받는다. API는 IP 원문을 저장하지 않고 `SHA-256(IP + INTAKE_TOKEN)`만 저장하며, 같은 해시는 10분에 3건까지 받는다. 건마다 `source:feedback` 이슈가 된다.
 - 스모크 유입: `factory-smoke` 워크플로(6시간마다)가 프로덕션에 읽기 요청만 보낸다(Hurl `tests/smoke/readonly.hurl`, Playwright `apps/web/e2e-smoke/`). 실패하면 `source:smoke` 이슈를 만들거나 열린 이슈에 코멘트하고, 다음 성공 때 "복구됨" 코멘트를 남긴다. 이슈 종료는 사람이 정한다.
 - 유입 이슈는 자동으로 트리아지되지만, 구현은 리포 쓰기 권한자의 `@factory go`가 있어야 시작한다.
-- `INTAKE_TOKEN`: 원본은 GitHub environment `production`의 secret이다. 값을 바꾸려면 secret을 바꾼 뒤 `deploy` 워크플로를 다시 실행한다. 검증용 로컬 사본은 `~/.config/sfd/intake-token`(권한 600)에만 두고 터미널에 출력하지 않는다. 프리뷰 Worker에는 이 값을 넣지 않으므로 프리뷰의 수집 엔드포인트는 항상 404다.
+- `INTAKE_TOKEN`: 원본은 GitHub environment `production`의 secret이다. 값을 바꾸려면 secret을 바꾼 뒤 `deploy` 워크플로를 다시 실행한다. 검증용 로컬 사본은 `~/.config/sfd-intake-token`(권한 600)에만 두고 터미널에 출력하지 않는다. 프리뷰 Worker에는 이 값을 넣지 않으므로 프리뷰의 수집 엔드포인트는 항상 404다.
 - 수동 실행: `gh workflow run factory-intake.yml`, `gh workflow run factory-smoke.yml`.
 - 스모크 실패 주입: `gh workflow run factory-smoke.yml -f api_base=https://sfd-api.roboco.workers.dev/api/__smoke_injected_failure`. 존재하지 않는 경로라 `/health`가 404가 된다. 입력 없이 다시 실행하면 복구를 확인할 수 있다. `api_base`는 프로덕션 API 주소 자신이나 그 하위 경로만 받는다. 다른 값을 주면 `target` job이 실패하고 스모크 검사와 이슈 기록은 실행되지 않는다.
-- 에러 주입: `POST /api/_factory/intake/probe`에 `Authorization: Bearer <INTAKE_TOKEN>`을 보내면 의도적 예외가 하나 기록된다. 토큰이 없거나 틀리면 다른 미지 경로와 같은 404다.
+- 에러 주입: `POST /api/_factory/intake/probe`에 `Authorization: Bearer <INTAKE_TOKEN>`을 보내면 의도적 예외가 하나 기록된다(응답 500). 토큰이 없거나 틀리면 다른 미지 경로와 같은 404다. 토큰이 명령줄·셸 기록에 남지 않게 헤더를 파일 디스크립터로 넘긴다:
+  `curl -sS -o /dev/null -w '%{http_code}\n' -X POST -H @<(printf 'Authorization: Bearer %s\n' "$(cat ~/.config/sfd-intake-token)") https://sfd-api.roboco.workers.dev/api/_factory/intake/probe`
+  예약 수집(매시 7분·37분)을 기다리지 않으려면 probe 직후 `gh workflow run factory-intake.yml`을 실행한다. 같은 probe를 다시 보내고 수집하면 열린 이슈에 "누적 2회" 코멘트가 달린다.
+
+## 데모 리허설: 심은 버그
+
+- 버그: `apps/web/src/components/ArticleList.tsx`의 페이지 수 계산을 `Math.ceil`에서 `Math.floor`로 바꾼다. 글이 11-19개면 페이지 버튼이 사라지고 11번째 이후 글에 갈 수 없다. RealWorld Hurl(API만 검사)과 기존 E2E(페이지를 넘기지 않음)는 이 버그를 잡지 못하고, 데이터는 바뀌지 않는다.
+- 2026-10-11 검증 기록: 버그를 심은 사람 PR #16, 버그 이슈 #18, 팩토리 수정 PR #19(봇이 병합, 재현 테스트 `apps/web/src/components/ArticleList.test.tsx` 추가), evidence 음성 대조는 로컬 실행(아래)과 단위 테스트로 확인했다. `@factory go`(17:08 UTC)부터 이슈 종료(17:16 UTC)까지 사람 개입은 없었다.
+- 프로덕션 데모 데이터: 글이 11개 이상이어야 버그가 보인다. 2026-10-11에 데모 계정 `sfd-demo-1791737870`과 그 계정의 글 11개(제목 "데모 글 1"-"데모 글 11", 태그 `sfd-demo`)를 만들었다.
+- 리허설 순서:
+  1. 프로덕션 글이 11개 이상인지 확인한다: `curl -fsS 'https://sfd-api.roboco.workers.dev/api/articles?limit=1' | jq .articlesCount`
+  2. 버그를 심는 사람 PR을 병합한다. PR #19가 더한 `ArticleList.test.tsx`가 이 버그를 잡으므로, 같은 PR에서 그 테스트 파일도 지워야 `unit` 체크가 통과한다(또는 다른 버그를 고른다).
+  3. 배포 뒤 홈의 페이지 버튼이 사라진 것을 보여 준다.
+  4. 버그 템플릿으로 이슈를 연다(`type:bug`). 트리아지 코멘트가 달리면 `@factory go`를 남긴다.
+  5. 수정 PR의 `ci` run에서 `evidence` job 로그의 "evidence 통과"와 "base 종료 코드 1, head 종료 코드 0" 줄을 보여 준다. 이슈 라벨이 `factory:deployed`가 되고 닫히면 홈의 페이지 버튼이 돌아온 것을 보여 준다.
+- evidence 음성 대조: `evidence`는 봇이 연 PR만 판정하므로 사람 PR로는 음성 대조를 만들 수 없다. 대신 로컬에서 판정 CLI를 직접 실행한다. main에서 갈라진 브랜치에 base에서도 통과하는 테스트(예: `expect(1 + 1).toBe(2)`)만 커밋한 뒤, `EVIDENCE_PLAN='{"pr":1,"required":true,"reason":"local","reasonCode":"evaluated","baseSha":"<main SHA>","headSha":"<HEAD SHA>","testFiles":["<테스트 경로>"]}' pnpm -s factory evidence-run`을 실행하면 "evidence 실패 … 수정 전(base) 코드에서도 통과했다"와 종료 코드 1이 나온다.
 
 ## 배포 롤백
 
@@ -81,3 +96,5 @@ Workflows 권한은 주지 않는다. 이 권한이 없으면 App 토큰으로�
 - `INTAKE_TOKEN`은 GitHub `production` environment secret에 두고, 이 environment는 `main` 브랜치만 쓸 수 있도록 배포 브랜치 정책을 건다. main이 아닌 브랜치의 워크플로는 이 토큰을 읽지 못한다.
 - `POST /api/_factory/intake/probe`는 `INTAKE_TOKEN`을 가진 사람만 쓸 수 있는 오류 주입 경로다. 효과는 `error_events` 한 행과 그에 따른 유입 이슈뿐이다.
 - `factory-intake`는 environment `production`을 참조하므로, GitHub가 30분마다 이 environment의 배포 기록을 하나씩 만든다.
+- CODEOWNERS 승인은 PR 작성자가 유일한 코드 소유자(`@serithemage`)이면 강제되지 않는다. 그래서 T2·T3의 사람 승인 게이트는 봇 PR에만 실질적으로 적용된다. 사람 기여자가 늘면 코드 소유자를 두 명 이상으로 둔다.
+- GitHub `schedule` 트리거는 지연되거나 건너뛰어질 수 있다. 에러·피드백이 30분 안에 이슈가 되는 것은 예약 실행이 제때 돌 때만 보장된다. 급하면 `gh workflow run factory-intake.yml`로 수동 실행한다.

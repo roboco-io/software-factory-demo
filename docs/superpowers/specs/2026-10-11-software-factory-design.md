@@ -129,8 +129,8 @@ new ──triage──▶ triaged ──사람 @factory go──▶ approved ─
 |---|---|---|
 | T0 | `docs/**`, `**/*.md`(단, `AGENTS.md`·`CLAUDE.md` 제외), `apps/web/src/copy/**` | 필수 체크 통과 시 자동 병합 |
 | T1 | `apps/**`, `packages/**`, `tests/**`(T2·T3 제외. `tests/realworld/skip.txt`에서 줄을 지우는 것이 수용 기준이므로 `tests/`는 T1이다) | 필수 체크 통과 + 교차 리뷰 승인 시 자동 병합 |
-| T2 | `apps/api/src/auth/**`, 실제 인증 파일 `apps/api/src/middleware/auth.ts`·`apps/api/src/lib/password.ts`·`apps/api/src/lib/token.ts`·`apps/api/src/routes/users.ts`, `apps/api/migrations/**`, `**/package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `apps/*/wrangler.*`(실제 파일은 `apps/api/wrangler.json`), `**/.dev.vars` | CODEOWNERS 사람 승인 필수 |
-| T3 | `.github/**`, `factory/**`, `packages/factory/**`, `AGENTS.md`, `CLAUDE.md`, 하위 디렉토리의 에이전트 지침·설정(`**/AGENTS.md`, `**/CLAUDE.md`, `.claude/**`, `.agents/**` 등), `scripts/**`, `tests/realworld/vendor/**`, `tests/realworld/UPSTREAM.txt` | CODEOWNERS 사람 승인 필수. 구현 에이전트는 이 경로를 수정하면 안 된다(위반 시 `risk-tier` 체크 실패). 단 `improve` 역할 PR은 예외로 수정 가능하며 사람 승인이 필요하다 |
+| T2 | `apps/api/src/auth/**`, 실제 인증 파일 `apps/api/src/middleware/auth.ts`·`apps/api/src/lib/password.ts`·`apps/api/src/lib/token.ts`·`apps/api/src/routes/users.ts`, `apps/api/migrations/**`, `**/package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `apps/*/wrangler.*`(실제 파일은 `apps/api/wrangler.json`), `**/.dev.vars`, 수집 엔드포인트의 인증 경계 `apps/api/src/middleware/intake.ts`·`apps/api/src/routes/intake.ts`(P3) | CODEOWNERS 사람 승인 필수 |
+| T3 | `.github/**`, `factory/**`, `packages/factory/**`, `AGENTS.md`, `CLAUDE.md`, 하위 디렉토리의 에이전트 지침·설정(`**/AGENTS.md`, `**/CLAUDE.md`, `.claude/**`, `.agents/**` 등), `scripts/**`, `tests/realworld/vendor/**`, `tests/realworld/UPSTREAM.txt`, 스모크 기준 `tests/smoke/**`·`apps/web/e2e-smoke/**`(P3) | CODEOWNERS 사람 승인 필수. 구현 에이전트는 이 경로를 수정하면 안 된다(위반 시 `risk-tier` 체크 실패). 단 `improve` 역할 PR은 예외로 수정 가능하며 사람 승인이 필요하다 |
 
 T3을 두는 이유: 에이전트가 팩토리 자신의 규칙·게이트를 바꿔 검증을 우회하지 못하게 하기 위해서다. 전망 글 「바이브 코딩을 넘어서 소프트웨어 팩토리로」(2026-09-16)는 "성공 기준까지 임의로 바꿔 버리면 개선됐다는 판단 자체를 믿기 어렵다"고 경고한다.
 
@@ -140,7 +140,7 @@ T3을 두는 이유: 에이전트가 팩토리 자신의 규칙·게이트를 �
 - 권한: Contents RW, Issues RW, Pull requests RW, Actions RW(다음 단계 workflow dispatch, `@factory stop`의 run 취소), Variables RW(실패율 차단기가 `FACTORY_PAUSED`를 씀), Checks R, Metadata R, Projects RW(org, P4). Workflows 권한은 주지 않는다. 그래서 App 토큰으로는 `.github/workflows/**`를 바꾸는 커밋을 push할 수 없다.
 - 왜 App인가: `GITHUB_TOKEN`으로 만든 PR·push·라벨 이벤트는 다른 워크플로를 트리거하지 않는다. App 토큰을 쓰면 단계 간 이벤트 체인이 이어진다.
 - 워크플로는 `actions/create-github-app-token`으로 설치 토큰을 발급받는다. 시크릿: `FACTORY_APP_ID`, `FACTORY_APP_PRIVATE_KEY`.
-- main 브랜치 보호(ruleset `main-protection`): 필수 체크 = `typecheck`, `lint`, `unit`, `realworld-api`, `e2e`, `risk-tier`(+P3에서 `evidence`). `risk-tier`는 P2 병합 뒤 2026-10-11에 등록했다. 필수 승인 수 = 0. CODEOWNERS 리뷰 필수 = 켬. force push 금지.
+- main 브랜치 보호(ruleset `main-protection`): 필수 체크 = `typecheck`, `lint`, `unit`, `realworld-api`, `e2e`, `risk-tier`, `evidence`. `risk-tier`는 P2 병합 뒤 2026-10-11에 등록했다. `evidence`는 PR #15 병합 직후인 2026-10-11 16:52 UTC에 등록했다(ruleset `main-protection` 갱신 시각 기준). 이때부터 필수 체크는 7개다. 필수 승인 수 = 0. CODEOWNERS 리뷰 필수 = 켬. force push 금지.
 - 필수 승인 수를 0으로 두는 이유: App은 자기가 연 PR을 승인할 수 없다. 필수 승인을 1 이상으로 두면 T0·T1도 항상 사람 승인이 필요해져 위험 기반 위임이 성립하지 않는다. T2·T3은 CODEOWNERS로 사람 승인을 강제한다.
 - CODEOWNERS 소유자: `@serithemage`로 확정했다. `.github/CODEOWNERS`는 T2·T3 경로를 `factory/risk-policy.yml`과 같게 유지하며, 단위 테스트(`codeowners.test.ts`)가 두 파일의 동기화를 검사한다.
 
@@ -158,6 +158,8 @@ T3을 두는 이유: 에이전트가 팩토리 자신의 규칙·게이트를 �
 | `factory-merge.yml` | `workflow_run`(ci 완료), `workflow_dispatch`, `pull_request: closed` | gate | 결정적 코드: 등급 T0·T1 + 필수 체크 통과 + 현재 head SHA에 대한 `factory:verdict` 승인이면 squash 병합. `closed`는 이슈를 `factory:merged`로 옮긴다 |
 | `factory-guard.yml` | `schedule`(매시간), `workflow_dispatch` | — | 실패율 차단기 평가, 일일 상한으로 멈춘 implement 재개 |
 | `factory-contract.yml` | `workflow_dispatch`, `schedule`(주 1회) | — | 실제 엔진 세 개로 어댑터 계약 테스트 |
+| `factory-intake.yml` | `schedule`(매시 7분·37분), `workflow_dispatch` | — | P3. environment `production`에서 `INTAKE_TOKEN`으로 수집 엔드포인트를 읽어 `source:error`·`source:feedback` 이슈를 만들거나 코멘트하고 ack한다. 동시성 그룹 하나(`cancel-in-progress: false`) |
+| `factory-smoke.yml` | `schedule`(6시간마다, 23분), `workflow_dispatch`(`api_base` 입력) | — | P3. `target`(입력 검증) → `checks`(읽기 전용 Hurl·Playwright) → `report`(`source:smoke` 이슈 생성·코멘트·"복구됨") |
 
 공통 규칙:
 
@@ -165,6 +167,7 @@ T3을 두는 이유: 에이전트가 팩토리 자신의 규칙·게이트를 �
 - 에이전트를 실행하는 워크플로(triage, implement, review, fix)는 job 세 개로 나눈다. `prepare`는 App 토큰으로 상태를 확인하고 계획을 artifact로 넘긴다. `agent`는 GitHub 토큰 없이 배정된 엔진의 키 하나만 받아 에이전트를 실행하고 결과(작업 트리 bundle, outcome JSON)를 artifact로 넘긴다. `publish`는 새로 발급한 App 토큰으로 결과를 다시 검증(조상 관계, 위험 등급, T3 금지)한 뒤 push·PR·라벨·런 기록을 한다. publish는 main을 체크아웃한 별도 디렉토리의 팩토리 CLI를 실행하고, 에이전트가 만든 코드는 실행하지 않는다.
 - `agent` job과 계약 테스트 job은 에이전트 실행 전에 `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`을 실행한다. Codex CLI의 Linux 샌드박스(bubblewrap)는 비특권 user namespace가 필요한데 ubuntu-24.04 러너의 AppArmor가 이를 막아, 쓰기 모드에서 파일을 만들지 못한 채 성공으로 끝났기 때문이다(2026-10-11 계약 테스트 run 38132807644에서 확인, PR #6에서 수정).
 - 모든 단계 스크립트는 `packages/factory`의 CLI(`pnpm factory <stage> --issue N`)로 실행한다. 워크플로 YAML에는 로직을 넣지 않는다. 이렇게 해야 단계 로직을 로컬과 Vitest에서 테스트할 수 있다.
+- `ci.yml`의 `evidence`는 두 job이다(P3). `evidence-plan`은 GitHub 토큰으로 PR 표식·이슈 라벨·변경 파일을 읽어 판정 계획을 만들고, `evidence`는 시크릿과 GitHub 토큰 없이(`persist-credentials: false`) base 커밋의 팩토리 CLI로 계획을 다시 검증한 뒤 PR 테스트를 실행한다. `evidence-plan`이 실패해도 `evidence`는 `!cancelled()` 조건으로 실행되어 실패한다. 건너뛴 필수 체크는 통과로 취급되기 때문이다.
 - 리포 변수 `FACTORY_PAUSED=true`이면 implement·fix 단계는 시작하지 않고 이슈에 사유 코멘트를 남긴다. triage와 보고는 계속 동작한다.
 
 ### 5.2 에이전트 어댑터
@@ -322,7 +325,7 @@ fix publish는 PR 브랜치를 한 커밋으로 다시 만든다(`reset --soft` 
 | `realworld-api` | 로컬 `wrangler dev`(로컬 D1)에 RealWorld 공식 Hurl 스위트 실행. 미구현 기능 테스트는 `tests/realworld/skip.txt`로 제외. 팩토리가 기능을 구현하면 skip 항목을 지우는 것이 수용 기준의 일부가 된다. skip 대상: favorites, feed, profiles, tags | P1 |
 | `e2e` | Playwright 스모크(가입→글 작성→댓글)를 로컬 서버(wrangler dev + vite preview)에 실행. PR 프리뷰 대상 실행은 `e2e-preview`(필수 아님) | P1 |
 | `risk-tier` | 변경 경로로 등급 판정, `risk:T0-3` 라벨 부착, 구현 역할의 T3 수정 차단 | P2 |
-| `evidence` | 버그 PR: 변경·추가된 테스트를 base 커밋에서 실행해 실패, head에서 통과해야 함 | P3 |
+| `evidence` | 버그 PR: 변경·추가된 테스트를 base 커밋에서 실행해 실패, head에서 통과해야 함. 실행 대상은 Vitest(`*.test.ts`, `*.test.tsx`)이고 Playwright E2E는 실행하지 않는다. 판정은 Vitest JSON 보고서의 단언(assertion) 결과로 한다. `evidence-plan` job이 실패해도 `!cancelled()`로 건너뛰지 않는다 | P3 |
 
 RealWorld Hurl 스위트는 업스트림 리포의 특정 커밋을 고정(pin)해 가져온다. 업스트림 변경이 게이트를 흔들지 않게 하기 위해서다.
 
@@ -345,6 +348,11 @@ RealWorld Hurl 스위트는 업스트림 리포의 특정 커밋을 고정(pin)�
 - 판정 코드는 base 커밋의 factory CLI로 실행하고, PR 코드는 시크릿이 없는 job에서만 실행한다(5.4).
 - 커밋 순서(재현 테스트 커밋이 먼저인지)는 판정에 쓰지 않는다. P2 publish가 커밋을 하나로 합치기 때문이다.
 - 버그 이슈의 implement 프롬프트에 "재현 테스트를 먼저 작성해 실패를 확인한 뒤 수정하라"는 규칙을 추가한다.
+- P3 구현에서 확정한 사항(2026-10-12):
+  - 테스트 파일 정의에 `**/*.test.tsx`를 더한다. 웹 컴포넌트 테스트가 `.test.tsx`라서 빼면 웹 버그의 재현 테스트를 판정할 수 없다.
+  - 실행 대상은 `*.test.ts`·`*.test.tsx`(Vitest)뿐이다. `apps/web/e2e/**`는 base 트리에 덮어쓰기만 하고 실행하지 않는다. 그래서 E2E만 바꾼 버그 PR은 실패한다.
+  - 판정은 종료 코드가 아니라 Vitest JSON 보고서의 단언 결과로 한다. base 실행은 모든 대상 파일을 수집 오류 없이 읽고 대상 파일에서 1개 이상 실패해야 한다. head 실행은 모든 대상 파일이 있고 1개 이상 통과, 0개 실패여야 한다. 그래서 PR이 새로 추가한 모듈을 import해 base에서 수집 오류가 나는 테스트는 재현으로 인정하지 않는다.
+  - 판정 계획(`evidence-plan`)과 PR 코드 실행(`evidence`)을 다른 job으로 나눈다(5.1). 계획이 필수인데 테스트 파일이 비어 있으면 사유와 상관없이 실패한다.
 
 #### 7.1.3 유입: 에러·피드백·스모크
 
@@ -353,6 +361,14 @@ RealWorld Hurl 스위트는 업스트림 리포의 특정 커밋을 고정(pin)�
 - 수집 엔드포인트: `GET /api/_factory/intake`(미확인 에러와 피드백 최대 50건)와 `POST /api/_factory/intake/ack`(`{"errors": [fingerprint], "feedback": [id]}`). 둘 다 `Authorization: Bearer <INTAKE_TOKEN>`이 필요하고, 토큰이 없거나 다르면 404를 반환해 엔드포인트 존재를 드러내지 않는다. `INTAKE_TOKEN`은 Worker secret과 GitHub `production` environment secret에 같은 값으로 둔다.
 - 수집 워크플로: `factory-intake.yml`이 30분마다 `pnpm -s factory intake`를 실행한다. 에러는 fingerprint 표식(`<!-- factory:intake {"kind":"error","key":"<fp>"} -->`)으로 열린 이슈를 찾아 있으면 코멘트로 횟수를 갱신하고 없으면 `source:error`, `type:bug` 라벨로 새 이슈를 만든다. 피드백은 건마다 `source:feedback` 이슈를 만든다. 이슈 생성에 성공한 항목만 ack한다.
 - 스모크: `factory-smoke.yml`이 6시간마다 프로덕션에 **읽기 전용** 검사만 실행한다(Hurl: `/api/health`, 글 목록, 태그 목록 / Playwright: 홈 화면 렌더링). 프로덕션에 데이터를 만들지 않기 위해서다. 실패하면 `source:smoke` 이슈를 만들거나 열린 이슈에 코멘트를 추가하고, 다음 성공 때 열린 스모크 이슈에 "복구됨" 코멘트를 남긴다.
+- P3 구현에서 확정한 사항(2026-10-12):
+  - 오류 주입은 토큰으로 보호한 상시 경로 `POST /api/_factory/intake/probe`로 한다. 토큰이 없거나 틀리면 다른 미지 경로와 같은 404이고, 효과는 `error_events` 한 행뿐이다.
+  - 에러 메시지와 경로는 정규화한 형태로 저장한다. 숫자·UUID·slug 외에 따옴표 안 문자열(`{str}`), 이메일(`{email}`), 긴 토큰(`{token}`)도 가린다. 꺾쇠 토큰은 GitHub 마크다운에서 사라지므로 중괄호를 쓴다. 경로는 요청 URL이 아니라 일치한 라우트 패턴으로 저장한다. 공개 이슈에 개별 값이 실리지 않게 하기 위해서다.
+  - fingerprint의 스택 프레임에서 줄·열 번호를 지운다. 배포할 때마다 같은 에러가 새 fingerprint가 되지 않게 하기 위해서다. `error_events`는 500행까지만 새 fingerprint를 받는다.
+  - 수집 목록 50건은 에러 25건과 피드백 25건으로 나눈다.
+  - `INTAKE_TOKEN`의 원본은 GitHub environment `production`의 secret 하나다. `deploy.yml`이 배포마다 같은 값을 Worker secret으로 넣는다. 프리뷰 Worker에는 넣지 않는다. IP 해시의 salt는 `INTAKE_TOKEN`이고, 비어 있으면 `JWT_SECRET`이다.
+  - 피드백에는 IP별 한도(10분에 3건) 외에 전체 한도(하루 50건)를 둔다.
+  - 같은 fingerprint의 에러가 다시 기록되면 열린 이슈에 누적 횟수를 코멘트한다. 이슈가 코멘트로 뒤덮이지 않도록, 코멘트는 누적 횟수가 임계값(2, 5, 10, 25, 50, 100, 250, ...)을 넘을 때 또는 봇의 마지막 횟수 코멘트 뒤 24시간이 지났을 때만 남긴다. ack는 매번 한다. 같은 fingerprint의 이슈가 닫혀 있으면 회귀로 보고 새 이슈를 만든다.
 - 트리아지: 봇이 연 이슈를 건너뛰는 P2 규칙에 예외를 둔다. `source:*` 라벨이 있는 봇 이슈는 트리아지한다. 유입 이슈의 본문(사용자 입력, 에러 메시지)은 신뢰하지 않는 입력으로 다룬다(5.4). 구현 착수에는 사람의 `@factory go`가 필요하다.
 
 #### 7.1.4 라이브 검증 재료
@@ -404,20 +420,22 @@ RealWorld Hurl 스위트는 업스트림 리포의 특정 커밋을 고정(pin)�
 
 ### P3 증거·유입 확장 — 완료 조건
 
-- [ ] 7.1.1: `risk-tier`·`policy`의 임시 분기가 제거되고, T2 PR에도 교차 리뷰 판정 코멘트가 남는다.
-- [ ] `evidence`가 main 보호 규칙의 필수 체크로 등록된다.
-- [ ] 심은 버그에 대한 버그 이슈가 `@factory go` 이후 사람 개입 없이 재현 테스트 작성 → `evidence` 통과 → 교차 리뷰 → 병합 → 배포까지 진행되고, 배포 후 버그가 프로덕션에서 사라진다.
-- [ ] 수정 전 코드에서도 통과하는 테스트만 가진 버그 PR은 `evidence`에서 실패한다(fake 시나리오 또는 사람 PR로 확인).
-- [ ] 프로덕션에서 의도적으로 발생시킨 에러가 30분 안에 `source:error` 이슈가 되고, 같은 에러가 반복되면 새 이슈 대신 코멘트로 횟수가 갱신된다.
-- [ ] 익명 피드백이 `source:feedback` 이슈가 되고, 같은 IP 해시의 4번째 요청은 10분 안에 429를 받는다.
-- [ ] 스모크 실패가 `source:smoke` 이슈가 되고(검증용 실패 주입), 복구 후 "복구됨" 코멘트가 남는다.
-- [ ] 유입 이슈 3종이 모두 트리아지되고, 사람의 `@factory go` 없이는 구현되지 않는다.
+근거는 2026-10-11(UTC) 라이브 검증 결과다. 상세 출력은 P3 계획의 Task 15·16 보고서에 있다.
+
+- [x] 7.1.1: `risk-tier`·`policy`의 임시 분기가 제거되고, T2 PR에도 교차 리뷰 판정 코멘트가 남는다. 근거: PR #13(`workflows.test.ts` "ci.yml judges risk-tier with the base commit's factory code", `review.test.ts` "posts the verdict for a T2 PR held in needs-human without changing state or dispatching"). 실제 T2 봇 PR에서의 관찰은 아직 없다(10.1).
+- [x] `evidence`가 main 보호 규칙의 필수 체크로 등록된다. 근거: PR #15 병합 뒤 ruleset `main-protection`의 필수 체크가 `typecheck, lint, unit, realworld-api, e2e, risk-tier, evidence`다(2026-10-11 16:52 UTC 갱신).
+- [x] 심은 버그에 대한 버그 이슈가 `@factory go` 이후 사람 개입 없이 재현 테스트 작성 → `evidence` 통과 → 교차 리뷰 → 병합 → 배포까지 진행되고, 배포 후 버그가 프로덕션에서 사라진다. 근거: 사람 PR #16이 버그를 심었고 배포 뒤 홈의 페이지 버튼이 2개에서 0개가 되었다(글 11개). 버그 이슈 #18에 17:08 UTC `@factory go`를 남긴 뒤 라벨이 `triaged → approved → in-progress → in-review → merged → deployed`로 바뀌고 17:16 UTC에 봇이 닫았다. 수정 PR #19(구현 `claude/claude-sonnet-5-5`, 리뷰 `codex/gpt-6.1-sol` 승인, `risk:T1`, 봇이 병합)는 `ArticleList.tsx`와 재현 테스트 `ArticleList.test.tsx`를 바꿨다. [ci run 38158628443](https://github.com/roboco-io/software-factory-demo/actions/runs/38158628443)의 `evidence` 로그: "evidence 통과(PR #19, reasonCode=evaluated)", "base 종료 코드 1(통과 2, 실패 4), head 종료 코드 0(통과 6, 실패 0)". [deploy run 38158831881](https://github.com/roboco-io/software-factory-demo/actions/runs/38158831881) 뒤 페이지 버튼이 다시 2개다.
+- [x] 수정 전 코드에서도 통과하는 테스트만 가진 버그 PR은 `evidence`에서 실패한다(fake 시나리오 또는 사람 PR로 확인). 근거: `evidence-run.test.ts` "fails when the reproduction test also passes on the base tree"(가짜 실행기). 사람 PR은 판정 대상이 아니므로(`evidence-plan.test.ts` "ignores a human-authored PR even when its body carries a valid marker") 라이브 음성 대조 PR은 만들 수 없었다. 대신 실제 판정 CLI(`pnpm -s factory evidence-run`)를 로컬에서 실제 Vitest로 실행해, main(`4ea3bc1`)에 base에서도 통과하는 테스트만 더한 커밋에 대해 "evidence 실패(PR #1, reasonCode=evaluated): 재현 테스트가 수정 전(base) 코드에서도 통과했다"와 종료 코드 1을 확인했다. GitHub의 봇 PR에서 음성 판정이 난 사례는 아직 없다.
+- [x] 프로덕션에서 의도적으로 발생시킨 에러가 30분 안에 `source:error` 이슈가 되고, 같은 에러가 반복되면 새 이슈 대신 코멘트로 횟수가 갱신된다. 근거: probe(토큰 없음 404, 토큰 500)를 16:59:03 UTC에 보냈고, 이슈 #20(`source:error`, `type:bug`, 작성자 봇)이 17:20:09 UTC(21분 뒤)에 생겼다. 두 번째 probe(17:20:25) 뒤 수집에서 [누적 2회 코멘트](https://github.com/roboco-io/software-factory-demo/issues/20#issuecomment-6111866130)가 달렸고 열린 `source:error` 이슈는 1개였다. 단, 두 수집 모두 예약 실행이 돌지 않아 수동 실행(run 38159169501, 38160971658)으로 했다. 예약 실행의 지연은 10.1에 수용 위험으로 적었다.
+- [x] 익명 피드백이 `source:feedback` 이슈가 되고, 같은 IP 해시의 4번째 요청은 10분 안에 429를 받는다. 근거: 16:59:16 UTC에 같은 IP에서 보낸 4건의 응답이 `201 201 201 429`였고, 이슈 #21·#22·#23(1/4-3/4)이 `source:feedback`으로 생겼다. 이슈 본문에 IP는 없다.
+- [x] 스모크 실패가 `source:smoke` 이슈가 되고(검증용 실패 주입), 복구 후 "복구됨" 코멘트가 남는다. 근거: `api_base=.../api/__smoke_injected_failure`로 실행한 [run 38157745579](https://github.com/roboco-io/software-factory-demo/actions/runs/38157745579)에서 `checks` 실패, `report`가 이슈 #17을 만들었다. 입력 없이 실행한 [run 38157881883](https://github.com/roboco-io/software-factory-demo/actions/runs/38157881883) 뒤 [복구됨 코멘트](https://github.com/roboco-io/software-factory-demo/issues/17#issuecomment-6111470862)가 달렸다.
+- [x] 유입 이슈 3종이 모두 트리아지되고, 사람의 `@factory go` 없이는 구현되지 않는다. 근거: #17·#20·#21·#22·#23이 모두 `factory:triaged`를 받았고 `factory/issue-N` PR은 0개였다. 라벨 이벤트로 시작된 `factory-implement` run은 모두 `skipped`였다. 단위 테스트 `triage.test.ts` "triages bot-opened intake issues (source:*) and still needs @factory go to implement". 검증 이슈는 확인 뒤 닫았다.
 
 ## 10. 미결 사항
 
 P2 착수 전 미결 사항(CODEOWNERS 소유자, pi DeepSeek provider ID, Codex 리뷰 모델 ID)은 모두 결정했다. CODEOWNERS 소유자는 `@serithemage`, pi는 내장 provider `deepseek/deepseek-flash`, Codex 리뷰 모델은 리포 변수 `CODEX_MODEL`(2026-10-11 값 `gpt-6.1-sol`)이다.
 
-### 10.1 수용한 잔여 위험(P2)
+### 10.1 수용한 잔여 위험(P2·P3)
 
 다음 위험은 데모 범위에서 수용했고 README의 "프리뷰 보안 한계", "팩토리 보안 한계"에도 기록했다.
 
@@ -425,4 +443,13 @@ P2 착수 전 미결 사항(CODEOWNERS 소유자, pi DeepSeek provider ID, Codex
 - agent job의 runner에는 Actions 런타임 토큰이 있다. runner를 장악한 에이전트는 Actions 캐시에 오염된 항목을 쓸 수 있고, 이후 신뢰하는 job이 그 캐시를 복원하면 오염된 의존성이 실행될 수 있다.
 - 프리뷰 웹은 프로덕션 웹과 같은 오리진에서 서빙되므로, 프리뷰 JS가 프로덕션 로그인 토큰을 읽는 것 자체는 막지 못한다. 토큰 키를 API 주소별로 나누고 프리뷰 Worker마다 별도 `JWT_SECRET`을 써서 프로덕션 토큰이 프리뷰 API에서 검증되지 않게 했다.
 - `preview` environment의 Cloudflare 토큰은 `production`과 분리되지 않았고 계정 단위 권한을 가진다. 완화책은 봇 PR이 T2·T3 경로를 바꾸면 프리뷰 배포를 생략하는 것이다(5.4 시크릿 격리).
-- T2 PR은 CI가 끝나자마자 gate가 `needs-human`으로 옮기므로, 리뷰 publish가 그 뒤에 끝나면 교차 리뷰 판정을 남기지 않는다(2026-10-11 PR #10에서 관찰). 병합은 사람 승인으로 막히므로 안전 문제는 아니지만, 사람 리뷰어가 AI 리뷰 결과를 PR에서 보지 못한다.
+- (해소) T2 PR은 CI가 끝나자마자 gate가 `needs-human`으로 옮기므로, 리뷰 publish가 그 뒤에 끝나면 교차 리뷰 판정을 남기지 않았다(2026-10-11 PR #10에서 관찰). P3의 7.1.1에서 리뷰 publish가 위험 등급 때문에 `needs-human`에 있는 PR에도 판정을 남기도록 바꿨다(`review.test.ts` "posts the verdict for a T2 PR held in needs-human without changing state or dispatching"). 2026-10-12 기준 이 경로를 지난 실제 T2 봇 PR은 아직 없다.
+
+다음은 P3에서 추가로 수용한 위험이다. README "팩토리 보안 한계"에도 기록했다.
+
+- `evidence` job은 PR 코드(테스트, 의존성 설치 스크립트)를 실행한다. 이 job에는 시크릿과 GitHub 토큰이 없지만 판정 프로세스와 같은 VM에서 돌기 때문에, 악의적인 PR 코드는 판정이 읽는 Vitest JSON 보고서를 위조해 `evidence`를 통과시킬 수 있다. `evidence`는 재현 테스트가 있다는 증거를 요구하는 장치이고 악의적인 작성자를 막는 장치가 아니다. T2·T3 변경은 계속 사람 승인이 막는다.
+- 피드백의 IP별 한도는 IP를 바꿔 가며 보내는 스팸을 막지 못한다. 전체 한도(하루 50건) 때문에 피드백 이슈와 그에 따른 triage 실행은 하루 약 50건으로 제한된다.
+- `POST /api/_factory/intake/probe`는 `INTAKE_TOKEN`을 가진 사람만 쓸 수 있는 상시 오류 주입 경로다. 효과는 `error_events` 한 행과 그에 따른 유입 이슈뿐이다.
+- `factory-intake`는 environment `production`을 참조하므로 실행마다 GitHub 배포 기록이 하나씩 생긴다.
+- CODEOWNERS 승인은 PR 작성자가 유일한 코드 소유자(`@serithemage`)이면 강제되지 않는다(GitHub는 작성자 자신의 승인을 요구하지 않는다. 2026-10-11 PR #13·#15 병합에서 확인). 그래서 T2·T3의 사람 승인 게이트는 봇 PR에만 실질적으로 적용되고, 소유자 자신의 PR은 필수 체크만 통과하면 병합된다. 데모 리포는 사람 기여자가 한 명이라 수용했다. 사람 기여자가 늘면 소유자를 두 명 이상으로 두어야 한다.
+- GitHub `schedule` 트리거는 정시에 실행된다는 보장이 없다. 2026-10-11 라이브 검증에서 `factory-intake.yml`의 17:07·17:37 UTC 예약 실행이 17:45 UTC까지 생기지 않았고(같은 시기 `factory-guard.yml`의 16:17 예약 실행은 16:39에 22분 늦게 돌았다), 그래서 수동 실행(`workflow_dispatch`)으로 수집했다(9장 P3 근거 참고). 그래서 "에러가 30분 안에 이슈가 된다"는 조건은 예약 실행이 제때 돌 때만 성립한다.
