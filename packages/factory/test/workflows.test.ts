@@ -272,6 +272,27 @@ describe("modified P1 workflows", () => {
     expect(JSON.stringify(wf.jobs.policy)).not.toMatch(/CLOUDFLARE/);
   });
 
+  it("preview.yml: PR-code jobs never persist credentials; e2e-preview is read-only; deploy passes the token explicitly (I-1)", () => {
+    const wf = load("preview.yml");
+    for (const name of ["deploy", "e2e-preview"]) {
+      for (const step of checkouts(wf.jobs[name]!)) {
+        expect(step.with?.["persist-credentials"], name).toBe(false);
+      }
+    }
+    expect(wf.jobs["e2e-preview"]!.permissions).toEqual({ contents: "read" });
+    expect(wf.jobs.deploy!.permissions).toEqual({ contents: "write", "pull-requests": "write" });
+    const action = wf.jobs.deploy!.steps.find((s) =>
+      s.uses?.startsWith("rossjrw/pr-preview-action"),
+    )!;
+    expect(action.with?.token).toBe("${{ secrets.GITHUB_TOKEN }}");
+  });
+
+  it("factory-merge.yml runs on-closed for every closed bot PR, merged or not (I-2)", () => {
+    const job = load("factory-merge.yml").jobs.closed!;
+    expect(job.if).not.toContain("merged");
+    expect(job.if).toContain("startsWith(github.event.pull_request.head.ref, 'factory/')");
+  });
+
   it("deploy.yml reports deploy results back to factory issues", () => {
     const job = load("deploy.yml").jobs["factory-report"]!;
     expect(job.needs).toEqual(["api", "web", "smoke"]);

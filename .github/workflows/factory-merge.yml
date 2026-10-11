@@ -41,7 +41,7 @@ jobs:
           PR: ${{ inputs.pr }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
   closed:
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'factory/')
+    if: github.event_name == 'pull_request' && startsWith(github.event.pull_request.head.ref, 'factory/')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

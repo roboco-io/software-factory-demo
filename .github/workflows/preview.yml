@@ -66,8 +66,13 @@ jobs:
       group: gh-pages
       cancel-in-progress: false
     environment: preview
+    # pr-preview-action이 gh-pages에 푸시하고 PR에 코멘트를 쓰는 데 필요한 권한만 둔다.
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
+        with: { persist-credentials: false }
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with: { node-version-file: .nvmrc, cache: pnpm }
@@ -101,6 +106,7 @@ jobs:
         with:
           source-dir: apps/web/dist
           wait-for-pages-deployment: "true"
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: marocchino/sticky-pull-request-comment@v3.0.5
         with:
           header: api-preview
@@ -110,8 +116,11 @@ jobs:
   e2e-preview:
     needs: deploy
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
+        with: { persist-credentials: false }
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with: { node-version-file: .nvmrc, cache: pnpm }
