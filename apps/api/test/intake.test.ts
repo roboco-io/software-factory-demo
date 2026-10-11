@@ -184,7 +184,7 @@ describe("intake endpoints", () => {
     expect(ack.status).toBe(200);
     const again = (await pending()).errors.find((e) => e.fingerprint === fp);
     expect(again?.count).toBe(prior + 1);
-    expect(again?.lastSeen > read.lastSeen).toBe(true);
+    expect((again?.lastSeen ?? "") > read.lastSeen).toBe(true);
   });
 
   it("returns at most 25 feedback items per call", async () => {
