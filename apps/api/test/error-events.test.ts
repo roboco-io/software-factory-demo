@@ -1,6 +1,12 @@
 import { env } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
-import { errorFingerprint, normalizeText, recordError, topFrames } from "../src/lib/error-events";
+import { describe, expect, it, vi } from "vitest";
+import {
+  ERROR_EVENTS_CAP,
+  errorFingerprint,
+  normalizeText,
+  recordError,
+  topFrames,
+} from "../src/lib/error-events";
 
 const STACK_A =
   "Error: x\n    at a (file.js:10:5)\n    at b (file.js:20:7)\n    at c (file.js:30:9)";
@@ -28,6 +34,23 @@ describe("normalizeText", () => {
   });
 });
 
+describe("normalizeText masking", () => {
+  it("masks quoted spans, emails, JWTs and long runs", () => {
+    expect(normalizeText(`bad "pw: hunter2" and 'x@y.z' end`)).toBe("bad {str} and {str} end");
+    expect(normalizeText("user bob@example.com failed")).toBe("user {email} failed");
+    expect(normalizeText("jwt eyJhbGciOi.eyJzdWIiOjF9.sig_n-1 bad")).toBe("jwt {token} bad");
+    expect(normalizeText("hash deadbeefdeadbeefdeadbeefdeadbeef x")).toBe("hash {token} x");
+    expect(normalizeText("user 0b5e7a3c-1f2d-4e5f-8a9b-0c1d2e3f4a5b")).toBe("user {uuid}");
+  });
+
+  it("leaves no raw values from a JSON parse error", () => {
+    const out = normalizeText(
+      `Unexpected token } in JSON at position 31: {"email":"a@b.co","password":"s3cretvalue"`,
+    );
+    expect(out).not.toMatch(/a@b|s3cret|password|email"/);
+  });
+});
+
 describe("topFrames", () => {
   it("keeps the top three frames without line and column", () => {
     const stack = [
@@ -39,6 +62,13 @@ describe("topFrames", () => {
     ].join("\n");
     expect(topFrames(stack)).toEqual(["at a (file.js)", "at b (file.js)", "at file.js"]);
     expect(topFrames(undefined)).toEqual([]);
+  });
+
+  it("strips a line number without a column", () => {
+    expect(topFrames("Error: x\n    at a (file.js:10)\n    at file.js:11")).toEqual([
+      "at a (file.js)",
+      "at file.js",
+    ]);
   });
 
   it("rewrites a leading `at async ` to `at `", () => {
@@ -66,6 +96,20 @@ describe("errorFingerprint", () => {
     );
   });
 
+  it("gives two different malformed bodies the same fingerprint", async () => {
+    const a = await errorFingerprint(make(`Bad JSON: {"email":"a@b.co","password":"one"`));
+    const b = await errorFingerprint(make(`Bad JSON: {"email":"c@d.io","password":"two22"`));
+    expect(a).toBe(b);
+  });
+
+  it("includes the error name and a nostack marker for stackless errors", async () => {
+    const t = new TypeError("boom");
+    t.stack = undefined;
+    const e = new RangeError("boom");
+    e.stack = undefined;
+    expect(await errorFingerprint(t)).not.toBe(await errorFingerprint(e));
+  });
+
   it("differs when the error comes from a different place", async () => {
     expect(await errorFingerprint(make("same", STACK_A))).not.toBe(
       await errorFingerprint(make("same", STACK_B)),
@@ -80,7 +124,7 @@ describe("recordError", () => {
     await recordError(
       env,
       first,
-      "/api/articles/hello-ab12cd/comments/5",
+      "/api/articles/:slug/comments/:id/ref/5",
       new Date("2026-10-12T00:00:00.000Z"),
     );
     await recordError(
@@ -97,7 +141,7 @@ describe("recordError", () => {
     expect(row).toEqual({
       fingerprint: fp,
       message: "Error: article {n} failed",
-      path: "/api/articles/{slug}/comments/{n}",
+      path: "/api/articles/:slug/comments/:id/ref/{n}",
       count: 2,
       first_seen: "2026-10-12T00:00:00.000Z",
       last_seen: "2026-10-12T00:05:00.000Z",
@@ -106,11 +150,38 @@ describe("recordError", () => {
   });
 
   it("truncates long messages to 500 characters", async () => {
-    const err = make("x".repeat(3000));
+    const err = make("word ".repeat(600));
     await recordError(env, err, "/api/x");
     const row = await env.DB.prepare("SELECT message FROM error_events WHERE fingerprint = ?")
       .bind(await errorFingerprint(err))
       .first<{ message: string }>();
     expect(row?.message.length).toBe(500);
+  });
+
+  it("never rejects and logs only the fingerprint", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const err = make("secret-ish message");
+    await expect(recordError({ DB: undefined } as never, err, "/x")).resolves.toBeUndefined();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(spy.mock.calls)).not.toContain("secret-ish");
+    spy.mockRestore();
+  });
+
+  it("stops inserting new fingerprints at the cap but still upserts existing ones", async () => {
+    expect(ERROR_EVENTS_CAP).toBe(500);
+    const count = async () =>
+      (await env.DB.prepare("SELECT COUNT(*) AS c FROM error_events").first<{ c: number }>())!.c;
+    const existing = make("cap existing");
+    await recordError(env, existing, "/p");
+    const n = await count();
+    await recordError(env, make("cap brand new"), "/p", new Date(), n);
+    expect(await count()).toBe(n);
+    await recordError(env, existing, "/p", new Date(), n);
+    const row = await env.DB.prepare("SELECT count FROM error_events WHERE fingerprint = ?")
+      .bind(await errorFingerprint(existing))
+      .first<{ count: number }>();
+    expect(row?.count).toBe(2);
+    await recordError(env, make("cap brand new"), "/p", new Date(), n + 1);
+    expect(await count()).toBe(n + 1);
   });
 });
