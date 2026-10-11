@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AppEnv } from "./env";
+import { recordError } from "./lib/error-events";
 import { ApiError, ROUTE_NOT_FOUND } from "./lib/errors";
+import { intakeRouter } from "./routes/intake";
 import { deferredRouter } from "./routes/deferred";
 import { feedbackRouter } from "./routes/feedback";
 import { articlesRouter } from "./routes/articles";
@@ -30,6 +32,7 @@ router.route("/", articlesRouter);
 router.route("/", commentsRouter);
 router.route("/", tagsRouter);
 router.route("/", feedbackRouter);
+router.route("/", intakeRouter);
 
 app.route("/api", router);
 
@@ -40,6 +43,14 @@ app.onError((err, c) => {
   const unique = /UNIQUE constraint failed: users\.(email|username)/.exec(msg);
   if (unique) return c.json({ errors: { [unique[1]!]: ["has already been taken"] } }, 409);
   console.error(err);
+  // spec 7.1.3: 기록은 응답을 늦추지 않도록 waitUntil로 넘기고, 기록 실패는 무시한다.
+  try {
+    c.executionCtx.waitUntil(
+      recordError(c.env, err, c.req.routePath ?? "{unmatched}").catch(() => undefined),
+    );
+  } catch {
+    // ExecutionContext가 없는 실행에서는 기록하지 않는다.
+  }
   return c.json({ errors: { server: ["internal error"] } }, 500);
 });
 
