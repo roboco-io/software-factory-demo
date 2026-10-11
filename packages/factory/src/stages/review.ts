@@ -14,6 +14,7 @@ import { parsePrMeta } from "../report/pr";
 import {
   TimedResultSchema,
   agentRecord,
+  branchFor,
   crashRecord,
   failureText,
   moveTo,
@@ -99,7 +100,7 @@ export const reviewStage: PhasedStage<{ pr: number }, ReviewPlan, ReviewOutcome>
     const pull = await deps.gh.getPull(pr);
     if (pull.author !== deps.settings.botLogin || pull.state !== "open" || pull.draft) return null;
     const meta = parsePrMeta(pull.body);
-    if (!meta) return null;
+    if (!meta || pull.headRef !== branchFor(meta.issue)) return null;
     const { issue, state } = await readState(deps.gh, meta.issue);
     if (state !== "in-review") return null;
     if (latestVerdict(await deps.gh.listReviews(pr), deps.settings.botLogin, pull.headSha)) {
@@ -141,8 +142,30 @@ export const reviewStage: PhasedStage<{ pr: number }, ReviewPlan, ReviewOutcome>
   },
 
   async agent(deps, plan) {
+    // 리뷰 대상은 prepare 시점의 head 커밋이다. 작업 디렉토리가 다른 커밋이면 판정을 만들지 않는다.
+    const branch = branchFor(plan.issue);
     await deps.git.fetch("main");
-    const diff = truncateDiff(await deps.git.diffAgainst("origin/main"));
+    await deps.git.fetch(branch);
+    await deps.git.checkoutNewBranch(branch, plan.headSha);
+    const unreviewable = (why: string): ReviewOutcome => ({
+      result: {
+        ok: false,
+        summary: why,
+        model: plan.model,
+        turns: 0,
+        usage: { inputTokens: 0, outputTokens: 0 },
+        durationMs: 0,
+        failureReason: "engine_error",
+      },
+      review: null,
+    });
+    const head = await deps.git.headSha();
+    if (head !== plan.headSha) {
+      return unreviewable(`작업 디렉토리 head ${head}가 리뷰 대상 ${plan.headSha}와 다르다.`);
+    }
+    const rawDiff = await deps.git.diffAgainst("origin/main");
+    if (!rawDiff.trim()) return unreviewable("origin/main 대비 변경이 없어 리뷰할 수 없다.");
+    const diff = truncateDiff(rawDiff);
     const prompt = renderPrompt(loadPrompt("review"), {
       authorEngine: plan.authorEngine,
       issueNumber: String(plan.issue),
@@ -151,7 +174,7 @@ export const reviewStage: PhasedStage<{ pr: number }, ReviewPlan, ReviewOutcome>
         plan.acceptanceCriteria.length > 0
           ? plan.acceptanceCriteria.map((c) => `- ${c}`).join("\n")
           : "(트리아지 수용 기준 없음)",
-      diff: diff || "(변경 없음)",
+      diff,
     });
     const { result, value } = await runStructured(
       deps.adapterFor(plan.engine, plan.model),

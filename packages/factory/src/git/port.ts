@@ -16,7 +16,8 @@ export interface GitPort {
   rebaseOnto(base: string): Promise<boolean>;
   createBundle(file: string): Promise<void>;
   importBundle(file: string, branch: string): Promise<void>;
-  push(branch: string, token: string): Promise<void>;
+  // expectSha(40자)를 주면 원격 브랜치가 그 커밋일 때만 덮어쓴다(force-with-lease). 없으면 무조건 덮어쓴다.
+  push(branch: string, token: string, expectSha?: string): Promise<void>;
   headSha(): Promise<string>;
   // ref(origin/main, 팩토리 브랜치, 40자 SHA)를 커밋 SHA로 푼다.
   revParse(ref: string): Promise<string>;
@@ -120,13 +121,16 @@ export function createGit(
       await git("fetch", ["fetch", "--no-tags", file, `+HEAD:refs/heads/${branch}`]);
       await git("checkout", ["checkout", branch]);
     },
-    async push(branch, token) {
+    async push(branch, token, expectSha) {
+      if (expectSha !== undefined) assertRef("sha", expectSha, SHA);
       const auth = Buffer.from(`x-access-token:${token}`).toString("base64");
       await git("push", [
         "-c",
         `http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}`,
         "push",
-        "--force",
+        expectSha === undefined
+          ? "--force"
+          : `--force-with-lease=refs/heads/${branch}:${expectSha}`,
         "origin",
         `HEAD:refs/heads/${branch}`,
       ]);

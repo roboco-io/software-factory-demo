@@ -4,7 +4,7 @@ import { parsePrMeta } from "../src/report/pr";
 import { fixStage } from "../src/stages/fix";
 import { runPhase } from "../src/stages/phased";
 import { reviewStage } from "../src/stages/review";
-import { makeTestDeps, openBotPr } from "./helpers";
+import { makeTestDeps, openBotPr, scriptedSpawn } from "./helpers";
 
 const write = (n: number) => ({
   writeFiles: { "apps/api/src/routes/tags.ts": `export const tags = ${n};\n` },
@@ -120,12 +120,16 @@ describe("fix stage", () => {
   it("does not force-push over a head that moved while the agent ran", async () => {
     const claude = createFakeAdapter([write(4)], "claude");
     const h = makeTestDeps({ adapters: { claude } });
-    const { pr, branch } = await openBotPr(h);
+    const { pr, branch, issue } = await openBotPr(h);
     const plan = (await fixStage.prepare(h.deps, { pr, sha: "sha-a", reason: "ci" }))!;
     const out = await fixStage.agent(h.deps, plan);
     h.gh.setBranch(branch, "sha-human", ["apps/api/src/routes/tags.ts"]);
     await fixStage.publish(h.deps, plan, out);
     expect(h.git.pushes).toHaveLength(0);
+    expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:in-review"]);
+    expect(h.gh.dispatches).toEqual([
+      { file: "factory-review.yml", inputs: { pr: String(pr), issue: String(issue) } },
+    ]);
   });
 
   it("clamps reported turns and cost, and rejects malformed outcomes", async () => {
@@ -156,5 +160,68 @@ describe("fix stage", () => {
     await runPhase(fixStage, "all", h.deps, { pr, sha: "sha-a", reason: "ci" }, null);
     expect(claude.calls).toHaveLength(0);
     expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:needs-human"]);
+  });
+
+  it("pushes with a lease on the sha it started from and records ok from the local checks", async () => {
+    const claude = createFakeAdapter([write(5)], "claude");
+    const h = makeTestDeps({ adapters: { claude }, spawn: scriptedSpawn({ test: [1, 1] }) });
+    const { pr } = await openBotPr(h);
+    await runPhase(fixStage, "all", h.deps, { pr, sha: "sha-a", reason: "ci" }, null);
+    expect(h.git.pushLeases).toEqual(["sha-a"]);
+    const run = (await h.deps.runs.since(new Date(0))).find((r) => r.role === "fix");
+    expect(run?.ok).toBe(false);
+  });
+
+  it("records a no-change round as not ok", async () => {
+    const claude = createFakeAdapter([{ result: { summary: "nothing" } }], "claude");
+    const h = makeTestDeps({ adapters: { claude } });
+    const { pr } = await openBotPr(h);
+    await runPhase(fixStage, "all", h.deps, { pr, sha: "sha-a", reason: "ci" }, null);
+    const run = (await h.deps.runs.since(new Date(0))).find((r) => r.role === "fix");
+    expect(run?.ok).toBe(false);
+  });
+
+  it("escalates a failed round 3 to needs-human instead of re-dispatching", async () => {
+    const claude = createFakeAdapter(
+      [{ result: { ok: false, failureReason: "timeout" } }],
+      "claude",
+    );
+    const h = makeTestDeps({ adapters: { claude } });
+    const { pr, issue } = await openBotPr(h);
+    await h.gh.addLabels(pr, ["factory:round-2"]);
+    await runPhase(fixStage, "all", h.deps, { pr, sha: "sha-a", reason: "ci" }, null);
+    expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:needs-human"]);
+    expect(h.gh.dispatches).toEqual([]);
+  });
+
+  it("a crash spends the round and retries, then escalates at round 3", async () => {
+    const h = makeTestDeps({ adapters: { claude: createFakeAdapter([], "claude") } });
+    const { pr, issue } = await openBotPr(h);
+    const plan = (await fixStage.prepare(h.deps, { pr, sha: "sha-a", reason: "ci" }))!;
+    await fixStage.crashed(h.deps, plan);
+    expect((await h.gh.getPull(pr)).labels).toContain("factory:round-1");
+    expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:in-review"]);
+    expect(h.gh.dispatches.map((d) => d.file)).toEqual(["factory-fix.yml"]);
+
+    const h3 = makeTestDeps({ adapters: { claude: createFakeAdapter([], "claude") } });
+    const b = await openBotPr(h3);
+    await h3.gh.addLabels(b.pr, ["factory:round-2"]);
+    const plan3 = (await fixStage.prepare(h3.deps, { pr: b.pr, sha: "sha-a", reason: "ci" }))!;
+    await fixStage.crashed(h3.deps, plan3);
+    expect((await h3.gh.getPull(b.pr)).labels).toContain("factory:round-3");
+    expect((await h3.gh.getIssue(b.issue)).labels).toEqual(["factory:needs-human"]);
+    expect(h3.gh.dispatches).toEqual([]);
+  });
+
+  it("a crash after the push sends the new head to review instead of retrying fix", async () => {
+    const h = makeTestDeps({ adapters: { claude: createFakeAdapter([], "claude") } });
+    const { pr, issue, branch } = await openBotPr(h);
+    const plan = (await fixStage.prepare(h.deps, { pr, sha: "sha-a", reason: "ci" }))!;
+    h.gh.setBranch(branch, "sha-pushed", ["apps/api/src/routes/tags.ts"]);
+    await fixStage.crashed(h.deps, plan);
+    expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:in-review"]);
+    expect(h.gh.dispatches).toEqual([
+      { file: "factory-review.yml", inputs: { pr: String(pr), issue: String(issue) } },
+    ]);
   });
 });

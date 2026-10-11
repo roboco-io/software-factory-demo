@@ -21,6 +21,12 @@ export class FakeGit implements GitPort {
   // 번들 head가 준비 시점 base의 후손인지(false면 조상이 아닌 것으로 판정).
   descendsFromBase = true;
   readonly baseSha = "b".repeat(40);
+  // checkoutNewBranch로 맞춘 시작 커밋. 커밋이 생기면 sha-N이 우선한다.
+  startHead: string | null = null;
+  headOverride: string | null = null;
+  // 커밋이 없을 때 diffAgainst가 돌려줄 PR 변경(리뷰 테스트용). 빈 문자열이면 변경 없음.
+  baseDiff = "diff --git a/x b/x\n+++ b/x\n+x";
+  readonly pushLeases: (string | undefined)[] = [];
   readonly messages: string[] = [];
   readonly pushes: { branch: string; sha: string; files: string[] }[] = [];
   readonly bundles: string[] = [];
@@ -46,8 +52,9 @@ export class FakeGit implements GitPort {
   }
 
   async fetch(): Promise<void> {}
-  async checkoutNewBranch(branch: string): Promise<void> {
+  async checkoutNewBranch(branch: string, startPoint?: string): Promise<void> {
     this.branch = branch;
+    this.startHead = startPoint ?? null;
     this.sinceBase.clear();
     this.snapshot = new Map(this.walk().map((f) => [f, this.read(f)]));
   }
@@ -58,6 +65,7 @@ export class FakeGit implements GitPort {
     return [...new Set([...this.sinceBase, ...(await this.changedFiles())])].sort();
   }
   async diffAgainst(): Promise<string> {
+    if (this.sinceBase.size === 0) return this.baseDiff;
     return [...this.sinceBase]
       .map((f) => `diff --git a/${f} b/${f}\n+++ b/${f}\n+${this.read(f)}`)
       .join("\n");
@@ -77,14 +85,17 @@ export class FakeGit implements GitPort {
     this.bundles.push(file);
   }
   async importBundle(): Promise<void> {}
-  async push(branch: string, token: string): Promise<void> {
+  async push(branch: string, token: string, expectSha?: string): Promise<void> {
     if (!token) throw new Error("push without token");
+    this.pushLeases.push(expectSha);
     const sha = await this.headSha();
     const files = await this.filesAgainst();
     this.pushes.push({ branch, sha, files });
     this.onPush?.(branch, sha, files);
   }
   async headSha(): Promise<string> {
+    if (this.headOverride) return this.headOverride;
+    if (this.messages.length === 0 && this.startHead) return this.startHead;
     return `sha-${this.messages.length}`;
   }
   async revParse(): Promise<string> {

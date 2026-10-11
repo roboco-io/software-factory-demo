@@ -127,6 +127,22 @@ async function feedbackFor(
   return `CI 필수 체크가 실패했다: ${failing.join(", ") || "(실패한 체크 이름을 찾지 못함)"}. 작업 디렉토리에서 같은 검사(pnpm typecheck, pnpm lint, pnpm test, RealWorld 스위트는 scripts/realworld-api.sh)를 실행해 원인을 찾고 고친다.`;
 }
 
+async function backToReview(deps: StageDeps, plan: FixPlan): Promise<void> {
+  const moved = await moveTo(
+    deps,
+    plan.issue,
+    "in-review",
+    "fix",
+    `PR #${plan.pr}의 head가 수정 중에 바뀌었다. 새 head를 다시 리뷰한다.${runLink(deps.settings)}`,
+  );
+  if (moved) {
+    await deps.gh.dispatchWorkflow("factory-review.yml", {
+      pr: String(plan.pr),
+      issue: String(plan.issue),
+    });
+  }
+}
+
 async function retryOrEscalate(deps: StageDeps, plan: FixPlan, why: string): Promise<void> {
   if (plan.round < MAX_ROUNDS) {
     const moved = await moveTo(
@@ -291,7 +307,7 @@ export const fixStage: PhasedStage<FixArgs, FixPlan, FixOutcome> = {
       return;
     }
     if (out.kind === "no-changes") {
-      if (await skip(true)) return;
+      if (await skip(false)) return;
       await retryOrEscalate(deps, plan, "수정 에이전트가 파일을 바꾸지 않았다.");
       return;
     }
@@ -330,11 +346,13 @@ export const fixStage: PhasedStage<FixArgs, FixPlan, FixOutcome> = {
     // push는 force push다. 에이전트가 도는 동안 다른 커밋이 올라갔다면 덮어쓰지 않는다.
     const pull = await deps.gh.getPull(plan.pr);
     if (pull.headSha !== plan.sha || pull.state !== "open") {
-      await recordOnce(deps, plan, out.result, true);
+      await recordOnce(deps, plan, out.result, out.checksOk);
       deps.log(`fix: PR #${plan.pr} head moved to ${pull.headSha}; push skipped`);
+      // 새 head에는 아직 판정이 없다. in-review로 돌리고 리뷰를 다시 시작해 이슈가 in-progress에 남지 않게 한다.
+      await backToReview(deps, plan);
       return;
     }
-    await recordOnce(deps, plan, out.result, true);
+    await recordOnce(deps, plan, out.result, out.checksOk);
     // 에이전트가 만든 커밋(작성자·메시지)은 믿지 않는다. 검증을 통과한 변경을 신뢰하는 메시지·봇 신원으로 다시 커밋한다.
     await deps.git.resetSoft(plan.baseSha);
     await deps.git.commitAll(
@@ -345,7 +363,7 @@ export const fixStage: PhasedStage<FixArgs, FixPlan, FixOutcome> = {
         plan.issue,
       ),
     );
-    await deps.git.push(plan.branch, token);
+    await deps.git.push(plan.branch, token, plan.sha);
     const meta = parsePrMeta(pull.body);
     if (meta) {
       await deps.gh.updatePullBody(plan.pr, replaceMeta(pull.body, { ...meta, round: plan.round }));
@@ -371,6 +389,11 @@ export const fixStage: PhasedStage<FixArgs, FixPlan, FixOutcome> = {
     if (!RECORDED.has(plan)) {
       RECORDED.add(plan);
       await record(deps, crashRecord("fix", plan));
+    }
+    // push 뒤(예: 라벨·코멘트 단계)에 죽었다면 head가 이미 바뀌었다. 같은 sha로 fix를 다시 보내면 낡은 dispatch이므로 리뷰로 보낸다.
+    if ((await deps.gh.getPull(plan.pr)).headSha !== plan.sha) {
+      await backToReview(deps, plan);
+      return;
     }
     await retryOrEscalate(deps, plan, "수정 단계가 비정상 종료했다.");
   },

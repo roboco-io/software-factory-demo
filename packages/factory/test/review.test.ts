@@ -115,4 +115,36 @@ describe("review stage", () => {
     expect((await h.gh.getIssue(issue)).labels).toContain("factory:needs-human");
     expect(await h.gh.listReviews(pr)).toHaveLength(0);
   });
+
+  it("posts no verdict when the checkout is not the reviewed head", async () => {
+    const codex = createFakeAdapter(loadFakeScript("review-approve"), "codex");
+    const h = makeTestDeps({ adapters: { codex } });
+    const { pr, issue } = await openBotPr(h);
+    h.git.headOverride = "sha-other";
+    await runPhase(reviewStage, "all", h.deps, { pr }, null);
+    expect(codex.calls).toHaveLength(0);
+    expect(await h.gh.listReviews(pr)).toHaveLength(0);
+    expect((await h.gh.getIssue(issue)).labels).toContain("factory:needs-human");
+    expect(h.gh.dispatches).toEqual([]);
+  });
+
+  it("does not approve an empty diff", async () => {
+    const codex = createFakeAdapter(loadFakeScript("review-approve"), "codex");
+    const h = makeTestDeps({ adapters: { codex } });
+    const { pr } = await openBotPr(h);
+    h.git.baseDiff = "";
+    await runPhase(reviewStage, "all", h.deps, { pr }, null);
+    expect(codex.calls).toHaveLength(0);
+    expect(await h.gh.listReviews(pr)).toHaveLength(0);
+    expect(h.gh.dispatches).toEqual([]);
+  });
+
+  it("ignores a PR whose branch is not the factory branch of its issue", async () => {
+    const codex = createFakeAdapter([], "codex");
+    const h = makeTestDeps({ adapters: { codex } });
+    const { pr } = await openBotPr(h);
+    h.gh.pulls.get(pr)!.headRef = "factory/issue-999";
+    await runPhase(reviewStage, "all", h.deps, { pr }, null);
+    expect(codex.calls).toHaveLength(0);
+  });
 });

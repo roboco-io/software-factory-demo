@@ -73,6 +73,26 @@ describe("createGit", () => {
     expect(git(origin, "rev-parse", "refs/heads/factory/issue-3")).toBe(sha);
   });
 
+  it("refuses a lease push when the remote branch moved", async () => {
+    const { work, port, origin, root } = await setup();
+    await port.checkoutNewBranch("factory/issue-7", "origin/main");
+    writeFileSync(path.join(work, "a.ts"), "a\n");
+    const first = await port.commitAll("a");
+    await port.push("factory/issue-7", "token");
+    const other = path.join(root, "other");
+    execFileSync("git", ["clone", origin, other], { stdio: "pipe" });
+    git(other, "checkout", "factory/issue-7");
+    writeFileSync(path.join(other, "h.ts"), "h\n");
+    git(other, "add", "-A");
+    git(other, "commit", "-m", "human");
+    git(other, "push", "origin", "factory/issue-7");
+    writeFileSync(path.join(work, "b.ts"), "b\n");
+    await port.commitAll("b");
+    await expect(port.push("factory/issue-7", "token", first)).rejects.toThrow();
+    expect(git(origin, "log", "-1", "--format=%s", "refs/heads/factory/issue-7")).toBe("human");
+    await port.push("factory/issue-7", "token");
+  });
+
   it("moves commits between checkouts with a bundle", async () => {
     const { root, origin, work, port } = await setup();
     await port.checkoutNewBranch("factory/issue-5", "origin/main");
