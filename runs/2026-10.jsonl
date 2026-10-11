@@ -17,3 +17,4 @@
 {"ts":"2026-10-11T17:00:49.361Z","issue":17,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
 {"ts":"2026-10-11T17:02:34.936Z","issue":17,"pr":null,"role":"smoke","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":0}
 {"ts":"2026-10-11T17:04:09.451Z","issue":17,"pr":null,"role":"triage","engine":"pi","model":"deepseek/deepseek-flash","ok":true,"turns":24,"costUsd":0.03446688,"durationMs":110877,"failureReason":null,"round":0}
+{"ts":"2026-10-11T17:07:54.878Z","issue":18,"pr":null,"role":"triage","engine":"pi","model":"deepseek/deepseek-flash","ok":true,"turns":4,"costUsd":0.003057624,"durationMs":11273,"failureReason":null,"round":0}
