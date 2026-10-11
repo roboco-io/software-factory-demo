@@ -1,0 +1,9 @@
+[
+  {
+    "result": {
+      "summary": "{\"verdict\":\"APPROVE\",\"summary\":\"수용 기준을 충족하고 테스트가 변경을 검증한다.\",\"findings\":[]}",
+      "model": "gpt-6.1-sol",
+      "turns": 3
+    }
+  }
+]

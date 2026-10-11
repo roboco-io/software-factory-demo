@@ -1,0 +1,12 @@
+[
+  {
+    "result": {
+      "ok": false,
+      "failureReason": "budget",
+      "summary": "error_max_budget_usd",
+      "model": "claude-sonnet-5-5",
+      "turns": 50,
+      "costUsd": 5.01
+    }
+  }
+]
