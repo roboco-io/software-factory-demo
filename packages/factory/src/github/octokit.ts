@@ -275,7 +275,9 @@ export function createOctokitPort(o: {
         const msg = e instanceof Error ? e.message : "";
         if (s === 409) throw new ConflictError(`${path} changed (409)`);
         if (s === 422 && /sha/i.test(msg)) throw new ConflictError(`${path} changed (422)`);
-        if (s === 404 && /branch/i.test(msg))
+        // Verified against real GitHub 2026-10-11: PUT contents to a missing branch returns
+        // 404 with message "Branch <name> not found". Octokit may append " - <docs url>".
+        if (s === 404 && /^Branch .+ not found(?: - https?:\/\/\S+)?$/.test(msg))
           throw new BranchNotFoundError(`Branch ${branch} not found`);
         throw e;
       }
@@ -349,11 +351,18 @@ export function createOctokitPort(o: {
         tree: tree.data.sha,
         parents: [],
       });
-      await octokit.rest.git.createRef({
-        ...base,
-        ref: `refs/heads/${branch}`,
-        sha: commit.data.sha,
-      });
+      try {
+        await octokit.rest.git.createRef({
+          ...base,
+          ref: `refs/heads/${branch}`,
+          sha: commit.data.sha,
+        });
+      } catch (e) {
+        // Another runner created the branch first; that is success for us.
+        const msg = e instanceof Error ? e.message : "";
+        if (statusOf(e) === 422 && msg.includes("Reference already exists")) return;
+        throw e;
+      }
     },
   };
 }

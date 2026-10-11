@@ -55,6 +55,7 @@ export class InMemoryGitHub implements GitHubPort {
   readonly cancelled: number[] = [];
   readonly merges: { pr: number; sha: string; title: string; message: string; mergeSha: string }[] =
     [];
+  readonly orphanMessages = new Map<string, string>();
   readonly writes: { branch: string; path: string; message: string }[] = [];
   injectConflicts = 0;
   mergeResult = true;
@@ -294,7 +295,7 @@ export class InMemoryGitHub implements GitHubPort {
   ): Promise<void> {
     if (this.branches.has(branch)) return;
     this.branches.add(branch);
-    this.writes.push({ branch, path: "(orphan)", message });
+    this.orphanMessages.set(branch, message);
     for (const [p, c] of Object.entries(files))
       this.contents.set(`${branch}:${p}`, { content: c, sha: `blob-${this.blobSeq++}` });
   }

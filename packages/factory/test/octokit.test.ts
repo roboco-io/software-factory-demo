@@ -273,3 +273,29 @@ describe("createOctokitPort pagination and caps", () => {
     await expect(gh.readFile("b", "big")).rejects.toThrow(/too large/);
   });
 });
+
+describe("createOctokitPort createOrphanBranch", () => {
+  const routes = (refStatus: number, refMessage: string): Route[] => [
+    {
+      method: "GET",
+      path: /branches\/factory-data$/,
+      status: 404,
+      body: { message: "Branch not found" },
+    },
+    { method: "POST", path: /git\/trees$/, status: 201, body: { sha: "tree1" } },
+    { method: "POST", path: /git\/commits$/, status: 201, body: { sha: "commit1" } },
+    { method: "POST", path: /git\/refs$/, status: refStatus, body: { message: refMessage } },
+  ];
+
+  it("treats 'Reference already exists' as success", async () => {
+    const gh = port(routes(422, "Reference already exists"));
+    await expect(
+      gh.createOrphanBranch("factory-data", { a: "b" }, "init"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rethrows other createRef failures", async () => {
+    const gh = port(routes(422, "Object does not exist"));
+    await expect(gh.createOrphanBranch("factory-data", { a: "b" }, "init")).rejects.toThrow();
+  });
+});
