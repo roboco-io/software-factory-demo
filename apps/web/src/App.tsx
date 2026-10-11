@@ -1,5 +1,6 @@
 import { HashRouter, Route, Routes } from "react-router";
 import { AuthProvider } from "./auth/AuthContext";
+import { Footer } from "./components/Footer";
 import { Header } from "./components/Header";
 import { ArticlePage } from "./pages/ArticlePage";
 import { Auth } from "./pages/Auth";
@@ -24,6 +25,7 @@ export function App() {
           <Route path="/profile/:username" element={<Profile />} />
           <Route path="*" element={<Home />} />
         </Routes>
+        <Footer />
       </HashRouter>
     </AuthProvider>
   );
