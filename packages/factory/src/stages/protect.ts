@@ -39,9 +39,10 @@ export type BundleCheck = { ok: true; verified: ChangeInspection } | { ok: false
 
 // publish 단계가 쓰기 전에 하는 번들 재검증. 결과 파일은 에이전트가 고칠 수 있으므로
 // 저장소 상태(번들)에서 head SHA, 기준 커밋과의 조상 관계, 변경 파일과 위험 등급을 다시 구한다.
+// allowed가 있으면 T3 검사 대신 모든 변경 파일이 allowed를 만족하는지로 판정한다(improve 역할).
 export async function importAndVerify(
   deps: StageDeps,
-  target: { branch: string; baseSha: string; sha: string },
+  target: { branch: string; baseSha: string; sha: string; allowed?: (file: string) => boolean },
 ): Promise<BundleCheck> {
   await deps.git.fetch("main");
   if (deps.settings.bundlePath) {
@@ -62,6 +63,16 @@ export async function importAndVerify(
     };
   }
   const verified = await inspectChanges(deps, "origin/main");
+  if (target.allowed) {
+    const outside = verified.files.filter((f) => !target.allowed!(f));
+    if (outside.length > 0 || verified.files.length === 0) {
+      return {
+        ok: false,
+        reason: `publish 단계의 재검증에서 변경이 거부되었다(허용 경로 밖 파일: ${fileList(outside) || "없음"}, 변경 파일 수: ${verified.files.length}).`,
+      };
+    }
+    return { ok: true, verified };
+  }
   if (verified.forbidden.length > 0 || verified.files.length === 0) {
     return {
       ok: false,

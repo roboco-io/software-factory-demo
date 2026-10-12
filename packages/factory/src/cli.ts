@@ -17,6 +17,7 @@ import { fixStage } from "./stages/fix";
 import { runGate, runOnClosed } from "./stages/gate";
 import { runGuard } from "./stages/guard";
 import { implementStage } from "./stages/implement";
+import { improveStage } from "./stages/improve";
 import type { StageDeps } from "./stages/deps";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
 import { runCollect } from "./stages/collect";
@@ -139,6 +140,7 @@ export const COMMANDS: Record<string, Handler> = {
       sender ? { issue: num(v, "issue"), sender } : { issue: num(v, "issue") },
     );
   },
+  improve: (ctx, v) => phased(ctx, v, improveStage, { issue: num(v, "issue") }),
   gate: async (ctx, v) => {
     const pr = optNum(v, "pr");
     const branch = str(v, "branch");

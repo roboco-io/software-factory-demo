@@ -170,6 +170,22 @@ describe("cli main", () => {
     expect((await h.gh.getIssue(issue.number)).labels).toContain("factory:triaged");
   });
 
+  it("runs improve in the requested phase and requires --issue", async () => {
+    const h = makeTestDeps();
+    const issue = h.gh.addIssue({ title: "사람 이슈" });
+    const phases: Phase[] = [];
+    const out: string[] = [];
+    expect(
+      await main(
+        ["improve", "--issue", String(issue.number), "--phase", "all"],
+        context(h, phases),
+      ),
+    ).toBe(0);
+    expect(phases).toEqual(["all"]);
+    expect(h.logs).toContain(`improve: #${issue.number} is not an open factory report; skipping`);
+    expect(await main(["improve", "--phase", "all"], context(h, [], out))).toBe(2);
+  });
+
   it("requires an explicit --phase", async () => {
     const out: string[] = [];
     expect(await main(["triage", "--issue", "1"], context(makeTestDeps(), [], out))).toBe(2);
