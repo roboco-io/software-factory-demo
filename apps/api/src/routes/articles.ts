@@ -4,7 +4,7 @@ import { db, type Db } from "../db/client";
 import { articles, articleTags, favorites, tags, users } from "../db/schema";
 import type { AppEnv } from "../env";
 import { readWrapped, requireString } from "../lib/body";
-import { ApiError, forbidden, invalid, notFound } from "../lib/errors";
+import { ApiError, forbidden, invalid, notFound, tooLarge } from "../lib/errors";
 import { slugify } from "../lib/slug";
 import { nextTimestamp } from "../lib/time";
 import { authedUserId, optionalAuth, requireAuth } from "../middleware/auth";
@@ -116,6 +116,7 @@ export const articlesRouter = new Hono<AppEnv>();
 
 articlesRouter.get("/articles", optionalAuth, async (c) => {
   const q = c.req.query();
+  if (q.limit !== undefined && Number.parseInt(q.limit, 10) > 100) throw tooLarge("limit", 100);
   const limit = intParam(q.limit, 20, 1, 100);
   const offset = intParam(q.offset, 0, 0, Number.MAX_SAFE_INTEGER);
   const conds: SQL[] = [];

@@ -95,8 +95,15 @@ describe("GET /articles", () => {
     expect(byTag.articles[0]!.tagList).toEqual([tag]);
   });
 
-  it("clamps limit/offset and returns empty list for favorited filter", async () => {
-    expect((await api("/articles?limit=1000&offset=-5")).status).toBe(200);
+  it("rejects limit above 100 with 422", async () => {
+    const res = await api("/articles?limit=101");
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ errors: { limit: ["must be 100 or less"] } });
+    expect((await api("/articles?limit=100")).status).toBe(200);
+  });
+
+  it("clamps offset and returns empty list for favorited filter", async () => {
+    expect((await api("/articles?limit=100&offset=-5")).status).toBe(200);
     const fav = (await (await api("/articles?favorited=someone")).json()) as {
       articles: Article[];
       articlesCount: number;
