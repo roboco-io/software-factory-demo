@@ -140,7 +140,7 @@ T3을 두는 이유: 에이전트가 팩토리 자신의 규칙·게이트를 �
 - 권한: Contents RW, Issues RW, Pull requests RW, Actions RW(다음 단계 workflow dispatch, `@factory stop`의 run 취소), Variables RW(실패율 차단기가 `FACTORY_PAUSED`를 씀), Checks R, Metadata R, Projects RW(org, P4). Workflows 권한은 주지 않는다. 그래서 App 토큰으로는 `.github/workflows/**`를 바꾸는 커밋을 push할 수 없다.
 - 왜 App인가: `GITHUB_TOKEN`으로 만든 PR·push·라벨 이벤트는 다른 워크플로를 트리거하지 않는다. App 토큰을 쓰면 단계 간 이벤트 체인이 이어진다.
 - 워크플로는 `actions/create-github-app-token`으로 설치 토큰을 발급받는다. 시크릿: `FACTORY_APP_ID`, `FACTORY_APP_PRIVATE_KEY`.
-- main 브랜치 보호(ruleset `main-protection`): 필수 체크 = `typecheck`, `lint`, `unit`, `realworld-api`, `e2e`, `risk-tier`, `evidence`. `risk-tier`는 P2 병합 뒤 2026-10-11에 등록했다. `evidence`는 PR #15 병합 직후인 2026-10-11 16:52 UTC에 등록했다(ruleset `main-protection` 갱신 시각 기준). 이때부터 필수 체크는 7개다. 필수 승인 수 = 0. CODEOWNERS 리뷰 필수 = 켬. force push 금지.
+- main 브랜치 보호(ruleset `main-protection`): 필수 체크 = `typecheck`, `lint`, `unit`, `realworld-api`, `e2e`, `risk-tier`, `evidence`. `risk-tier`는 P2 병합 뒤 2026-10-11에 등록했다. `evidence`는 PR #15 병합 직후인 2026-10-11 16:52 UTC에 등록했다(ruleset `main-protection` 갱신 시각 기준). 이때부터 필수 체크는 7개다. `eval`은 PR #27 병합 뒤 2026-10-12 04:35 UTC에 등록했다(ruleset 갱신 시각 기준). 이때부터 필수 체크는 `typecheck`, `lint`, `unit`, `realworld-api`, `e2e`, `risk-tier`, `evidence`, `eval`의 8개다. 필수 승인 수 = 0. CODEOWNERS 리뷰 필수 = 켬. force push 금지.
 - 필수 승인 수를 0으로 두는 이유: App은 자기가 연 PR을 승인할 수 없다. 필수 승인을 1 이상으로 두면 T0·T1도 항상 사람 승인이 필요해져 위험 기반 위임이 성립하지 않는다. T2·T3은 CODEOWNERS로 사람 승인을 강제한다.
 - CODEOWNERS 소유자: `@serithemage`로 확정했다. `.github/CODEOWNERS`는 T2·T3 경로를 `factory/risk-policy.yml`과 같게 유지하며, 단위 테스트(`codeowners.test.ts`)가 두 파일의 동기화를 검사한다.
 
@@ -438,11 +438,28 @@ ESLint 설정이 수정 가능 경로에 있으므로 에이전트가 새 규칙
 
 #### 7.2.7 라이브 검증 재료
 
-P3의 버그 심기처럼 사람이 PR로 실패 패턴을 심는다. 먼저 `AGENTS.md`에서 "API 오류는 `errors.ts` 헬퍼만 사용한다"는 문장을 잠시 빼는 PR을 병합한다. 이어서 오류 응답이 필요한 작은 기능 이슈 3건을 팩토리에 맡긴다. 그러면 에이전트가 오류 JSON을 직접 만들고 리뷰가 이를 `error-format`으로 반복해서 지적할 것으로 예상한다. 이 예상은 추정이며 리허설에서 확인한다. 리뷰 지적이 3건에 이르지 않으면 이슈를 추가하거나 다른 패턴으로 바꾼다. improve가 이 반복을 보고 ESLint 규칙과 평가 케이스를 제안하면, 문장으로만 있던 규칙이 기계가 강제하는 규칙으로 바뀌는 과정을 보여 줄 수 있다. 심기 PR과 이슈 문안은 README 런북에 기록한다.
+처음 계획은 `AGENTS.md`에서 "API 오류는 `errors.ts` 헬퍼만 사용한다"는 문장을 잠시 빼서 실패를 심는 것이었다. 2026-10-12 리허설에서 이 방법은 실패를 만들지 못했다. 문장을 뺀 PR #31을 병합하고 오류 응답이 필요한 이슈 #32, #33, #34를 맡겼지만, 구현 에이전트는 리포의 기존 코드를 보고 계속 헬퍼를 썼다. 헬퍼를 import하지 않는 `routes/tags.ts`를 대상으로 한 이슈 #38에서도 에이전트는 `lib/errors.ts`를 찾아 썼다. 네 PR의 리뷰 지적 가운데 `error-format`은 0건이었다.
+
+그래서 실패 심기 방법을 구현 프롬프트 오염으로 바꿨다. PR #40은 `factory/prompts/implement.md`에 "API 오류 응답은 라우트에서 `c.json({ errors: ... })`로 직접 반환하고 오류 헬퍼를 import하지 않는다"는 잘못된 규칙을 넣었다. 리뷰 프롬프트에는 PR #31에서 "라우트에서 `c.json({ errors })`를 직접 반환하면 `error-format` major 지적"이라는 기준을 넣어 두었다. 이후 이슈 #41, #42, #43의 리뷰가 `error-format`을 모두 4번 지적했다. 이 방식은 "팩토리 규칙의 회귀를 자기개선 루프가 기계 규칙으로 막는다"는 이야기가 된다. 심기 PR, 이슈 문안, 되돌리기 절차는 README 런북 "데모 리허설: 실패 패턴 심기"에 기록했다.
 
 #### 7.2.8 작업 분할
 
 P3처럼 PR 여러 개로 나눈다. 첫째는 기록 보강, `collect`, 평가 러너, `eval` 필수 체크다. 둘째는 improve 단계와 주간 워크플로다. 셋째는 보고 세 가지다. 넷째는 실패 심기 리허설과 문서다. 워크플로 파일은 App이 수정할 수 없으므로 사람(Claude Code 세션)이 커밋한다.
+
+#### 7.2.9 구현에서 정한 사항
+
+spec이 정하지 않았거나, 기존 코드 때문에 spec과 다르게 정한 값이다.
+
+1. 런 기록 필드는 `findingCategories`가 아니라 `findings?: { category, file, message }[]`다. `collect`가 개선 후보에 대표 원문을 넣으려면 지적 문장도 필요하기 때문이다. 최대 10건을 저장하고, message는 300자, file은 200자로 자른다. 범주는 `error-format`, `missing-test`, `security`, `scope-creep`, `style`, `other` 가운데 하나이고, 범주가 없거나 목록에 없으면 `other`로 기록한다. 런 기록은 퍼블릭 브랜치에 있지만 같은 문장이 퍼블릭 PR 리뷰에 이미 있으므로 노출이 늘지 않는다.
+2. 개선 PR 브랜치는 `factory/issue-<리포트 이슈 번호>`다. `GitPort`의 브랜치 정규식이 `main`과 `factory/issue-N`만 허용하기 때문이다. PR 메타의 `issue`도 리포트 이슈 번호다.
+3. 개선 PR 본문의 "ESLint 설정에서 삭제된 줄" 절은 `eslint.config.*` diff의 `-` 줄을 그대로 보여 준다. 삭제된 규칙 목록을 정확히 구하려면 에이전트가 수정한 설정을 실행해야 하는데, publish job에는 App 토큰이 있어 PR 코드를 실행할 수 없기 때문이다.
+4. 평가 케이스 종류는 `lint`와 `prompt-contains` 두 가지만 구현했다. 7.2.4의 `vitest` 종류는 구현하지 않았다. 데모의 실패 패턴(오류 형식)은 `lint`로 충분하고, `vitest`는 픽스처를 어느 패키지 설정으로 실행할지를 따로 정해야 하기 때문이다.
+5. 보드는 번호가 아니라 제목("Software Factory")으로 찾는다. 번호를 변수로 받으려면 상태를 바꾸는 워크플로 9개에 변수를 더해야 하기 때문이다. 같은 제목의 보드가 2개 이상이면 동기화하지 않고 경고를 남긴다.
+6. "병합 집중도"는 작성자별 병합 PR 비중이다. spec은 이 지표를 정의하지 않았다.
+7. 대시보드는 개선 PR 병합 시점을 `factory-data:improvements.json`에서 읽는다. 이 파일은 주간 리포트 단계가 갱신한다. 브라우저가 인증 없이 GitHub API를 부르면 시간당 60회 한도에 걸리기 때문이다.
+8. gate와 on-closed는 개선 PR(`role: "improve"`)을 자동 처리하지 않는다. 개선 PR은 항상 T3이므로 사람이 병합한다. on-closed는 리포트 이슈에 "병합되었다" 또는 "병합 없이 닫혔다" 코멘트만 남기고 상태 라벨은 바꾸지 않는다.
+9. 개선 PR의 "새 케이스는 base에서 못 잡고 head에서 잡아야 한다" 검사는 봇이 연 개선 PR에만 적용한다(7.2.4). 회귀 검사(기존 케이스가 계속 잡혀야 한다)는 모든 PR에 적용한다.
+10. 리허설에서 발견한 결함 두 가지를 고쳤다. 첫째, 개선 PR #47이 병합된 뒤 같은 근거로 같은 범주의 개선 PR #50이 다시 열렸다. PR #51에서 병합된 개선 PR 이전의 같은 범주 이벤트를 세지 않게 바꿨다(7.2.2). 둘째, 연속 병합으로 대기 중이던 deploy 실행이 더 새 실행으로 대체되면 그 실행의 이슈(#33)가 `factory:merged`에 남았다. PR #52에서 `deployed`가 배포 SHA보다 앞선 main 커밋(최근 14일, 최대 50개)의 이슈 가운데 아직 `factory:merged`로 열린 것도 함께 옮기게 바꿨다.
 
 ## 8. 테스트 전략
 
@@ -495,21 +512,23 @@ P3처럼 PR 여러 개로 나눈다. 첫째는 기록 보강, `collect`, 평가 
 
 ### P4 보고·자기개선 — 완료 조건
 
-- [ ] 리뷰 지적에 범주가 붙고, review 런 기록에 `findingCategories`가 남는다.
-- [ ] `eval`이 main 보호 규칙의 필수 체크로 등록된다(8개).
-- [ ] 심은 실패가 서로 다른 이슈 3건 이상에서 같은 리뷰 범주로 기록되고, `collect`가 그 범주를 개선 후보로 낸다.
-- [ ] 수동 실행한 `factory-weekly`의 improve가 규칙과 평가 케이스를 담은 `factory:improve` PR을 연다. 이 PR은 T3로 사람 승인을 기다린다.
-- [ ] 그 PR에서 `eval`이 통과하고, 평가 케이스가 base 규칙으로는 픽스처를 잡지 못한다는 판정 로그가 남는다.
-- [ ] 개선 PR 병합 뒤, 같은 실수를 담은 변경이 `lint` 또는 `eval`에서 실패한다.
-- [ ] 주간 리포트 이슈가 생성되고 6개 지표, 표본 수, 규칙 전후 비교가 표시된다.
-- [ ] 팩토리가 라벨을 바꾸면 Projects 보드의 상태 필드가 따라 바뀐다.
-- [ ] 대시보드 `/factory/`가 새 런 기록을 Pages 재배포 없이 보여 준다.
+근거는 2026-10-12(UTC) 라이브 검증 결과다. 실패 심기 방법은 7.2.7에 적었다.
+
+- [x] 리뷰 지적에 범주가 붙고, review 런 기록에 범주가 남는다. 필드 이름은 `findings`다(7.2.9 1번). 근거: `factory-data`의 `runs/2026-10.jsonl`에서 PR #44(이슈 #42) review 런의 `findings`는 `error-format` 2건이고, PR #45(#41)와 PR #46(#43)은 각 1건이다. 범주가 없거나 목록에 없는 지적은 `other`로 기록된다(단위 테스트).
+- [x] `eval`이 main 보호 규칙의 필수 체크로 등록된다(8개). 근거: ruleset `main-protection`의 필수 체크는 `typecheck, lint, unit, realworld-api, e2e, risk-tier, evidence, eval`이다(2026-10-12 04:35 UTC 갱신, PR #27 병합 뒤).
+- [x] 심은 실패가 서로 다른 이슈 3건 이상에서 같은 리뷰 범주로 기록되고, `collect`가 그 범주를 개선 후보로 낸다. 근거: 구현 프롬프트를 오염시킨 PR #40 뒤, 이슈 #41, #42, #43의 리뷰가 `error-format`을 모두 4번 지적했다. weekly [run 38222999723](https://github.com/roboco-io/software-factory-demo/actions/runs/38222999723)(08:20 UTC)이 후보 `review:error-format`(4회, 서로 다른 이슈 3건)을 냈다. 앞선 두 심기 시도(#31, #38)에서는 지적이 0건이었다(7.2.7).
+- [x] 수동 실행한 `factory-weekly`의 improve가 규칙과 평가 케이스를 담은 `factory:improve` PR을 연다. 이 PR은 T3로 사람 승인을 기다린다. 근거: 같은 run이 PR [#47](https://github.com/roboco-io/software-factory-demo/pull/47)을 열었다. 라벨은 `risk:T3`와 `factory:improve`다. 바뀐 파일은 `eslint.config.js`(`apps/api/src/routes/**`에서 `errors` 값이 객체 리터럴인 `c.json` 호출을 막는 `no-restricted-syntax`), `factory/evals/error-format/case.yml`, `fixture.ts`다. CODEOWNER가 승인한 뒤 08:27 UTC에 병합했다.
+- [x] 그 PR에서 `eval`이 통과하고, 평가 케이스가 base 규칙으로는 픽스처를 잡지 못한다는 판정 로그가 남는다. 근거: [eval job](https://github.com/roboco-io/software-factory-demo/actions/runs/38223377457/job/114724977130) 로그 "- error-format: base=못 잡음, head=잡음". 음성 대조로 PR #47의 head에서 `eslint.config.js`만 base로 되돌리고 로컬에서 `pnpm -s factory eval-run`을 실행했다. 결과는 "새 케이스 error-format를 head도 잡지 못한다", "base=못 잡음, head=못 잡음"이었고 종료 코드는 1이었다.
+- [x] 개선 PR 병합 뒤, 같은 실수를 담은 변경이 `lint` 또는 `eval`에서 실패한다. 근거: `routes/tags.ts`에 `return c.json({ errors: { prefix: [...] } }, 422)`를 넣은 draft PR #48에서 [lint job](https://github.com/roboco-io/software-factory-demo/actions/runs/38223958193/job/114726765443)이 실패했다(`no-restricted-syntax`). 확인 뒤 닫았다.
+- [x] 주간 리포트 이슈가 생성되고 6개 지표, 표본 수, 규칙 전후 비교가 표시된다. 근거: 이슈 [#29](https://github.com/roboco-io/software-factory-demo/issues/29) "주간 리포트 2026-W42". [08:52 UTC 코멘트](https://github.com/roboco-io/software-factory-demo/issues/29#issuecomment-6120933849)에는 다음 항목이 들어 있다. 요약(완주율), 엔진별 성공률과 비용, 작성자별 병합 비중, 등급별 사람 승인 없는 병합(표본이 5 미만이면 "데이터 부족 (n=4)"로 표시), 실패 사유 상위, 규칙 효과(`review:error-format` #47, 병합 전 28일 4건, 병합 뒤 0건(0일)), 개선 후보. 병합 뒤 기간이 0일이므로 이 비교는 아직 효과의 근거가 아니다.
+- [x] 팩토리가 라벨을 바꾸면 Projects 보드의 상태 필드가 따라 바뀐다. 근거: 보드 "Software Factory"(org 프로젝트 3)의 `Factory` 필드가 이슈 #32, #33, #34, #38, #42, #43은 `deployed`, #41은 `needs-human`이다. 라벨과 같다. #33은 PR #52 병합 뒤 `deployed`로 바뀌었다(7.2.9 10번).
+- [x] 대시보드 `/factory/`가 새 런 기록을 Pages 재배포 없이 보여 준다. 근거: 14:10 UTC에 브라우저로 페이지를 열었다. 페이지는 `raw.githubusercontent.com/.../factory-data/runs/2026-10.jsonl`(200, 84줄)과 `improvements.json`을 직접 받았다. 받은 데이터의 마지막 기록은 12:22 UTC 것이고, 마지막 Pages 배포(deploy run 완료 08:51 UTC)보다 뒤에 생겼다. 차트에는 개선 PR 마커 `#47`이 표시된다.
 
 ## 10. 미결 사항
 
 P2 착수 전 미결 사항(CODEOWNERS 소유자, pi DeepSeek provider ID, Codex 리뷰 모델 ID)은 모두 결정했다. CODEOWNERS 소유자는 `@serithemage`, pi는 내장 provider `deepseek/deepseek-flash`, Codex 리뷰 모델은 리포 변수 `CODEX_MODEL`(2026-10-11 값 `gpt-6.1-sol`)이다.
 
-### 10.1 수용한 잔여 위험(P2·P3)
+### 10.1 수용한 잔여 위험(P2-P4)
 
 다음 위험은 데모 범위에서 수용했고 README의 "프리뷰 보안 한계", "팩토리 보안 한계"에도 기록했다.
 
@@ -527,3 +546,13 @@ P2 착수 전 미결 사항(CODEOWNERS 소유자, pi DeepSeek provider ID, Codex
 - `factory-intake`는 environment `production`을 참조하므로 실행마다 GitHub 배포 기록이 하나씩 생긴다.
 - CODEOWNERS 승인은 PR 작성자가 유일한 코드 소유자(`@serithemage`)이면 강제되지 않는다(GitHub는 작성자 자신의 승인을 요구하지 않는다. 2026-10-11 PR #13·#15 병합에서 확인). 그래서 T2·T3의 사람 승인 게이트는 봇 PR에만 실질적으로 적용되고, 소유자 자신의 PR은 필수 체크만 통과하면 병합된다. 데모 리포는 사람 기여자가 한 명이라 수용했다. 사람 기여자가 늘면 소유자를 두 명 이상으로 두어야 한다.
 - GitHub `schedule` 트리거는 정시에 실행된다는 보장이 없다. 2026-10-11 라이브 검증에서 `factory-intake.yml`의 17:07·17:37 UTC 예약 실행이 17:45 UTC까지 생기지 않았고(같은 시기 `factory-guard.yml`의 16:17 예약 실행은 16:39에 22분 늦게 돌았다), 그래서 수동 실행(`workflow_dispatch`)으로 수집했다(9장 P3 근거 참고). 그래서 "에러가 30분 안에 이슈가 된다"는 조건은 예약 실행이 제때 돌 때만 성립한다. 2026-10-12 확인 결과 첫 예약 실행은 `factory-intake.yml`이 2026-10-11 20:56 UTC, `factory-smoke.yml`이 22:03 UTC에 성공했다. 새 워크플로의 첫 예약 실행이 늦게 시작된 것으로 본다.
+
+다음은 P4에서 추가로 수용한 위험이다. README "팩토리 보안 한계"에도 기록했다.
+
+- `eval` job은 head 트리의 `eslint.config.js`를 실행한다. 그래서 악의적인 PR은 설정 파일에서 판정 결과를 위조할 수 있다. 이것은 `evidence`와 같은 성격의 한계다. job에는 시크릿과 GitHub 토큰이 없고, 개선 PR은 T3라 사람 승인이 막는다.
+- 평가 케이스가 없는 기존 ESLint 규칙을 지우는 변경은 `eval`이 잡지 못한다. 회귀 검사는 평가 케이스가 있는 규칙만 지키기 때문이다. 개선 PR 본문의 "ESLint 설정에서 삭제된 줄" 절과 사람 검토에 의존한다.
+- `factory-eval-live`의 agent job은 같은 job 안에서 구현 에이전트와 리뷰 에이전트를 차례로 실행하므로, 구현 엔진과 리뷰 엔진의 키를 함께 환경변수로 받는다. 첫 번째 항목(엔진 키가 runner에 함께 전달됨)과 같은 위험이 이 job에서는 환경변수 수준으로 커진다. 이 워크플로는 수동 실행만 한다.
+- 보드는 제목으로 찾는다(7.2.9 5번). 그래서 누군가 org에 같은 제목의 보드를 만들면 동기화가 멈춘다. 이때 팩토리는 경고만 남기고 상태 전이는 계속한다.
+- 런 기록에 리뷰 지적 원문(최대 300자)이 저장된다. 같은 문장이 퍼블릭 PR 리뷰에 이미 있으므로 노출이 늘지는 않는다.
+- 보드는 비공개로 만들어졌다. App에는 보드 공개 범위를 바꿀 권한이 없으므로("Viewer not authorized to change project visibility"), 데모에서 공개하려면 org 관리자가 보드 설정에서 직접 바꿔야 한다.
+- 팩토리의 GitHub API 호출은 일시적인 5xx 오류를 재시도하지 않는다. 2026-10-12 12:22 UTC에 이슈 #41의 implement prepare가 `GET /issues/41`에서 502를 받아 실패했고, 이슈는 `factory:approved`에 남았다. 실패한 job을 다시 실행해 복구했다. `guard`는 이 상태를 자동으로 복구하지 않는다.
