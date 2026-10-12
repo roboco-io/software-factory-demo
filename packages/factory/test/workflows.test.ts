@@ -501,10 +501,29 @@ describe("evidence gate (P3)", () => {
     }
   });
 
+  it("runs eval-run with the base commit's factory code and no secrets", () => {
+    const ci = load("ci.yml");
+    const plan = ci.jobs["eval-plan"]!;
+    const run = ci.jobs.eval!;
+    expect(checkouts(plan)[0]!.with?.ref).toBe(BASE_SHA);
+    expect(run.needs).toBe("eval-plan");
+    expect(run.if).toContain("!cancelled()");
+    expect(run.permissions).toEqual({ contents: "read" });
+    expect(JSON.stringify(run)).not.toMatch(/secrets\.|GITHUB_TOKEN/);
+    const step = run.steps.find((s) => s.run?.includes("pnpm -s factory eval-run"))!;
+    expect(step["working-directory"]).toBe("base");
+    expect(step.env).toMatchObject({
+      EVAL_PLAN: "${{ needs.eval-plan.outputs.plan }}",
+      EVAL_BASE_DIR: "${{ github.workspace }}/base",
+      FACTORY_WORKDIR: "${{ github.workspace }}/head",
+    });
+  });
+
   it("produces every required check of factory/risk-policy.yml as a ci.yml job that runs on pull requests", () => {
     const jobs = load("ci.yml").jobs;
     const required = loadRiskPolicy().requiredChecks;
     expect(required).toContain("evidence");
+    expect(required).toContain("eval");
     for (const name of required) {
       expect(jobs[name], name).toBeDefined();
       expect(jobs[name]!.if ?? "", name).not.toMatch(/event_name == 'push'/);
