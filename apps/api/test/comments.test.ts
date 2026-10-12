@@ -91,4 +91,12 @@ describe("comments", () => {
     ).comments;
     expect(list).toHaveLength(1);
   });
+
+  it("accepts 1000 chars, rejects 1001 with 422", async () => {
+    const { a, slug } = await setup();
+    expect((await post(slug, a.token, "a".repeat(1000))).status).toBe(201);
+    const res = await post(slug, a.token, "a".repeat(1001));
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ errors: { body: ["must be 1000 characters or less"] } });
+  });
 });
