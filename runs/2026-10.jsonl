@@ -71,3 +71,4 @@
 {"ts":"2026-10-12T08:16:37.018Z","issue":42,"pr":44,"role":"fix","engine":"claude","model":"claude-sonnet-5-5","ok":true,"turns":3,"costUsd":0.0308234,"durationMs":39151,"failureReason":null,"round":1}
 {"ts":"2026-10-12T08:18:01.739Z","issue":43,"pr":46,"role":"fix","engine":"claude","model":"claude-sonnet-5-5","ok":true,"turns":5,"costUsd":0.0339603,"durationMs":62304,"failureReason":null,"round":1}
 {"ts":"2026-10-12T08:18:21.268Z","issue":42,"pr":44,"role":"review","engine":"codex","model":"gpt-6.1-sol","ok":true,"turns":3,"costUsd":null,"durationMs":17101,"failureReason":null,"round":1,"findings":[]}
+{"ts":"2026-10-12T08:19:01.575Z","issue":42,"pr":44,"role":"gate","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":1}
