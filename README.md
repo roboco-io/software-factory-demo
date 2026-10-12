@@ -46,6 +46,14 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
   `curl -sS -o /dev/null -w '%{http_code}\n' -X POST -H @<(printf 'Authorization: Bearer %s\n' "$(cat ~/.config/sfd-intake-token)") https://sfd-api.roboco.workers.dev/api/_factory/intake/probe`
   예약 수집(매시 7분·37분)을 기다리지 않으려면 probe 직후 `gh workflow run factory-intake.yml`을 실행한다. 같은 probe를 다시 보내고 수집하면 열린 이슈에 "누적 2회" 코멘트가 달린다.
 
+## 주간 실행과 자기개선(P4)
+
+`factory-weekly` 워크플로는 매주 월요일 00:00 UTC에 실행된다. 수동으로 실행하려면 `gh workflow run factory-weekly.yml`을 쓴다. 먼저 `report` job이 지난 주의 주간 리포트 이슈를 만든다. 이 이슈에는 런 기록에서 계산한 지표(완주율, 엔진별 성공률과 비용), 실패 범주별 횟수, 표본 수가 기준에 못 미칠 때의 표시, 이전에 병합된 개선 규칙의 적용 전후 비교가 들어간다. 개선 이력은 `factory-data` 브랜치의 `improvements.json`에 쌓인다.
+
+같은 범주의 실패가 서로 다른 이슈 3건 이상에서 반복되면 그 범주가 개선 후보가 되고, `prepare`·`agent`·`publish` job이 차례로 돈다. 후보가 없으면 이 세 job은 `skipped`로 끝난다. improve 에이전트는 `AGENTS.md`, `factory/prompts/**`, `eslint.config.*`, `factory/evals/**`만 고칠 수 있으며, 고친 결과는 `factory:improve` 라벨이 붙은 PR로 열린다. 이 PR은 `factory/`와 `AGENTS.md`를 바꾸므로 T3이고, 사람(CODEOWNERS)이 승인하기 전에는 병합되지 않는다.
+
+개선 PR에서는 `eval` 필수 체크가 PR이 추가한 평가 케이스(`factory/evals/**`)를 결정적으로 실행한다. 케이스는 과거 실패 사례가 새 규칙에 의해 기계적으로 걸러지는지 확인하며, 통과해야 병합할 수 있다.
+
 ## 데모 리허설: 심은 버그
 
 - 버그: `apps/web/src/components/ArticleList.tsx`의 페이지 수 계산을 `Math.ceil`에서 `Math.floor`로 바꾼다. 글이 11-19개면 페이지 버튼이 사라지고 11번째 이후 글에 갈 수 없다. RealWorld Hurl(API만 검사)과 기존 E2E(페이지를 넘기지 않음)는 이 버그를 잡지 못하고, 데이터는 바뀌지 않는다.
