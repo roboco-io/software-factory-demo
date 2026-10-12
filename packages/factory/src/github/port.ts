@@ -73,6 +73,14 @@ export interface MergedPull {
   mergedAt: string;
 }
 
+export interface BoardSpec {
+  title: string;
+  field: string;
+  options: readonly string[];
+}
+
+export type BoardSyncResult = "synced" | "no-board" | "ambiguous";
+
 export class BranchNotFoundError extends Error {
   override name = "BranchNotFoundError";
 }
@@ -138,5 +146,9 @@ export interface GitHubPort {
   dispatchWorkflow(file: string, inputs: Record<string, string>): Promise<void>;
   cancelRunsForIssue(issue: number): Promise<number>;
   ensureLabel(name: string, color: string, description: string): Promise<void>;
+  // 조직 Projects v2 보드를 만든다. 제목이 같은 보드가 이미 있으면 만들지 않는다.
+  ensureBoard(spec: BoardSpec): Promise<{ created: boolean; url: string }>;
+  // 이슈를 보드에 추가하고 단일 선택 필드를 option으로 맞춘다.
+  syncBoardStatus(spec: BoardSpec, issue: number, option: string): Promise<BoardSyncResult>;
   createOrphanBranch(branch: string, files: Record<string, string>, message: string): Promise<void>;
 }

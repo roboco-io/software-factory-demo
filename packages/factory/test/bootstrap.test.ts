@@ -6,7 +6,11 @@ import { makeTestDeps } from "./helpers";
 describe("runBootstrap", () => {
   it("creates every factory label and the factory-data branch, idempotently", async () => {
     const h = makeTestDeps();
-    expect(await runBootstrap(h.deps)).toEqual({ labels: 29, branch: DATA_BRANCH });
+    expect(await runBootstrap(h.deps)).toEqual({
+      labels: 29,
+      branch: DATA_BRANCH,
+      board: { created: false, url: expect.any(String) },
+    });
     await runBootstrap(h.deps);
     expect(h.gh.labels.size).toBe(29);
     for (const name of [

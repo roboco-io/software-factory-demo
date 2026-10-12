@@ -11,6 +11,7 @@ import {
   type Actor,
   type State,
 } from "../state/machine";
+import { syncBoard } from "./board";
 import type { Settings, StageDeps } from "./deps";
 
 export const FailureReasonSchema = z.enum([
@@ -75,6 +76,7 @@ export async function moveTo(
     if (issue.labels.includes(label)) await deps.gh.removeLabel(n, label);
   }
   await deps.gh.addLabels(n, [stateLabel(to)]);
+  await syncBoard(deps, n, to);
   if (reason) await deps.gh.comment(n, reason);
   return true;
 }

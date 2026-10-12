@@ -2,6 +2,7 @@ import { ENGINES } from "../agents/types";
 import { TIERS } from "../policy/risk";
 import { DATA_BRANCH } from "../runs/store";
 import { STATES, stateLabel } from "../state/machine";
+import { BOARD } from "./board";
 import type { StageDeps } from "./deps";
 
 export interface LabelSpec {
@@ -61,7 +62,9 @@ export const LABELS: LabelSpec[] = [
   },
 ];
 
-export async function runBootstrap(deps: StageDeps): Promise<{ labels: number; branch: string }> {
+export async function runBootstrap(
+  deps: StageDeps,
+): Promise<{ labels: number; branch: string; board: { created: boolean; url: string } }> {
   for (const l of LABELS) await deps.gh.ensureLabel(l.name, l.color, l.description);
   await deps.gh.createOrphanBranch(
     DATA_BRANCH,
@@ -71,5 +74,7 @@ export async function runBootstrap(deps: StageDeps): Promise<{ labels: number; b
     },
     "chore: factory-data 고아 브랜치 생성",
   );
-  return { labels: LABELS.length, branch: DATA_BRANCH };
+  // 사람이 실행하는 설정 명령이므로 실패를 숨기지 않는다.
+  const board = await deps.gh.ensureBoard(BOARD);
+  return { labels: LABELS.length, branch: DATA_BRANCH, board };
 }

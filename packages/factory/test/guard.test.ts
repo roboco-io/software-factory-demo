@@ -61,6 +61,14 @@ describe("evaluateBreaker", () => {
 });
 
 describe("runGuard", () => {
+  it("reconciles the board even while paused and reports the count", async () => {
+    const h = makeTestDeps({ now: NOW, settings: { paused: true } });
+    const a = await h.gh.createIssue("a", "", ["factory:in-review"]);
+    const r = await runGuard(h.deps);
+    expect(r.board).toBe(1);
+    expect(h.gh.board.get(a)).toBe("in-review");
+  });
+
   it("sets FACTORY_PAUSED and opens one alert issue when the breaker trips", async () => {
     const h = makeTestDeps({ now: NOW });
     await seed(

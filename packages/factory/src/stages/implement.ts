@@ -4,6 +4,7 @@ import { bugRuleFor, loadPrompt, renderPrompt } from "../agents/prompt";
 import type { Budget, EngineName } from "../agents/types";
 import { assignEngines, resolveModel } from "../config/agents";
 import { CHECK_SCRIPTS, formatCheckFailures } from "../exec/checks";
+import type { Issue } from "../github/port";
 import { findTriage } from "../report/comments";
 import { commitMessage } from "../report/commit";
 import { extractRisks, renderPrBody, type PrMeta, type PrReport } from "../report/pr";
@@ -89,6 +90,37 @@ const OutcomeSchema = z.discriminatedUnion("kind", [
 
 export type ImplementOutcome = z.infer<typeof OutcomeSchema>;
 
+export interface ImplementPrompt {
+  prompt: string;
+  // 템플릿 변수. eval-live가 다른 규칙 트리의 템플릿으로 같은 프롬프트를 다시 렌더할 때 쓴다.
+  vars: Record<string, string>;
+  acceptanceCriteria: string[];
+}
+
+// 이슈와 트리아지 수용 기준으로 구현 프롬프트를 만든다. implement와 eval-live가 같은 프롬프트를 쓴다.
+export async function buildImplementPrompt(
+  deps: StageDeps,
+  issue: Pick<Issue, "number" | "title" | "body" | "labels">,
+): Promise<ImplementPrompt> {
+  const triage = findTriage(await deps.gh.listComments(issue.number), deps.settings.botLogin);
+  const criteria = triage?.acceptanceCriteria ?? [];
+  const vars = {
+    issueNumber: String(issue.number),
+    issueTitle: issue.title,
+    issueBody: issue.body || "(본문 없음)",
+    acceptanceCriteria:
+      criteria.length > 0
+        ? criteria.map((c) => `- ${c}`).join("\n")
+        : "(트리아지 수용 기준 없음. 이슈 본문을 기준으로 한다.)",
+    bugRule: bugRuleFor(issue.labels),
+  };
+  return {
+    prompt: renderPrompt(loadPrompt("implement"), vars),
+    vars,
+    acceptanceCriteria: criteria,
+  };
+}
+
 // 이미 실행 기록을 남긴 계획. publish 도중 예외가 나도 crashed()가 같은 런을 다시 세지 않게 한다.
 const RECORDED = new WeakSet<ImplementPlan>();
 
@@ -157,19 +189,8 @@ export const implementStage: PhasedStage<ImplementArgs, ImplementPlan, Implement
     const assignment = assignEngines(deps.agents, issue.labels);
     const engine = assignment.implement.engine;
     const model = resolveModel(deps.agents, engine, deps.settings.env);
-    const triage = findTriage(await deps.gh.listComments(args.issue), deps.settings.botLogin);
-    const criteria = triage?.acceptanceCriteria ?? [];
+    const { prompt, acceptanceCriteria: criteria } = await buildImplementPrompt(deps, issue);
     const branch = branchFor(args.issue);
-    const prompt = renderPrompt(loadPrompt("implement"), {
-      issueNumber: String(args.issue),
-      issueTitle: issue.title,
-      issueBody: issue.body || "(본문 없음)",
-      acceptanceCriteria:
-        criteria.length > 0
-          ? criteria.map((c) => `- ${c}`).join("\n")
-          : "(트리아지 수용 기준 없음. 이슈 본문을 기준으로 한다.)",
-      bugRule: bugRuleFor(issue.labels),
-    });
     await deps.git.fetch("main");
     const baseSha = await deps.git.revParse("origin/main");
     // 위 검사 이후 라벨이 바뀌어 전이가 거부되면(경합) 에이전트를 돌리지 않는다.

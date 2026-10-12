@@ -2,6 +2,8 @@ import {
   type LabeledIssueRef,
   BranchNotFoundError,
   ConflictError,
+  type BoardSpec,
+  type BoardSyncResult,
   type ChangedFile,
   type CheckRun,
   type CommitInfo,
@@ -63,6 +65,8 @@ export class InMemoryGitHub implements GitHubPort {
   readonly writes: { branch: string; path: string; message: string }[] = [];
   readonly commits: CommitInfo[] = [];
   readonly createdAt = new Map<number, string>();
+  readonly board = new Map<number, string>();
+  boardState: "ok" | "missing" | "ambiguous" | "error" = "ok";
   clock: () => Date = () => new Date();
   injectConflicts = 0;
   mergeResult = true;
@@ -330,6 +334,19 @@ export class InMemoryGitHub implements GitHubPort {
   }
   async ensureLabel(name: string, color: string, description: string): Promise<void> {
     if (!this.labels.has(name)) this.labels.set(name, { color, description });
+  }
+  async ensureBoard(): Promise<{ created: boolean; url: string }> {
+    if (this.boardState === "error") throw new Error("board error");
+    const created = this.boardState === "missing";
+    if (created) this.boardState = "ok";
+    return { created, url: "https://github.com/orgs/test/projects/1" };
+  }
+  async syncBoardStatus(_spec: BoardSpec, issue: number, option: string): Promise<BoardSyncResult> {
+    if (this.boardState === "error") throw new Error("board error");
+    if (this.boardState === "missing") return "no-board";
+    if (this.boardState === "ambiguous") return "ambiguous";
+    this.board.set(issue, option);
+    return "synced";
   }
   async createOrphanBranch(
     branch: string,

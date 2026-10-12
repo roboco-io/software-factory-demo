@@ -29,6 +29,7 @@ interface Job {
 }
 interface Workflow {
   "run-name"?: string;
+  env?: Record<string, string>;
   on: Record<string, unknown>;
   concurrency?: { group: string };
   jobs: Record<string, Job>;
@@ -46,8 +47,11 @@ const AGENT_WORKFLOWS = [
   "factory-review.yml",
   "factory-fix.yml",
   "factory-weekly.yml",
+  "factory-eval-live.yml",
 ];
-const PHASED = /pnpm -s factory (triage|implement|review|fix|improve)\b/;
+// 에이전트 두 개(구현·리뷰)를 쓰므로 엔진 키를 둘 다 받는 워크플로.
+const TWO_ENGINE_WORKFLOWS = ["factory-eval-live.yml"];
+const PHASED = /pnpm -s factory (triage|implement|review|fix|improve|eval-live)\b/;
 const text = (step: Step) => JSON.stringify(step);
 const steps = (wf: Workflow) => Object.values(wf.jobs).flatMap((j) => j.steps);
 const checkouts = (job: Job) => job.steps.filter((s) => s.uses?.startsWith("actions/checkout@"));
@@ -63,6 +67,7 @@ describe("factory workflows", () => {
     expect(FACTORY).toEqual([
       "factory-command.yml",
       "factory-contract.yml",
+      "factory-eval-live.yml",
       "factory-fix.yml",
       "factory-guard.yml",
       "factory-implement.yml",
@@ -138,7 +143,7 @@ describe("factory workflows", () => {
   });
 
   it("give the agent job only the API key of the engine chosen by prepare (F16)", () => {
-    for (const file of AGENT_WORKFLOWS) {
+    for (const file of AGENT_WORKFLOWS.filter((f) => !TWO_ENGINE_WORKFLOWS.includes(f))) {
       const wf = load(file);
       expect(wf.jobs.prepare!.outputs?.engine, file).toBe("${{ steps.prepare.outputs.engine }}");
       const step = wf.jobs.agent!.steps.find((s) => s.run?.includes("--phase agent"))!;
@@ -185,6 +190,40 @@ describe("factory workflows", () => {
         expect(download?.with?.name, `${file} ${name}`).toBeUndefined();
       }
     }
+  });
+
+  it("factory-eval-live runs only on demand and gives the agent job the keys of both assigned engines, no token", () => {
+    const wf = load("factory-eval-live.yml");
+    expect(Object.keys(wf.on)).toEqual(["workflow_dispatch"]);
+    expect(Object.keys((wf.on.workflow_dispatch as { inputs: object }).inputs).sort()).toEqual([
+      "issue",
+      "pr",
+    ]);
+    expect(Object.keys(wf.jobs)).toEqual(["prepare", "agent", "publish"]);
+    const agent = wf.jobs.agent!;
+    expect(JSON.stringify(agent)).not.toMatch(
+      /FACTORY_TOKEN|GITHUB_TOKEN|GH_TOKEN|FACTORY_APP_|create-github-app-token/,
+    );
+    expect(agent.permissions).toEqual({ contents: "read" });
+    const outputs = wf.jobs.prepare!.outputs!;
+    expect(outputs["implement-engine"]).toBe("${{ steps.prepare.outputs.implement-engine }}");
+    expect(outputs["review-engine"]).toBe("${{ steps.prepare.outputs.review-engine }}");
+    const step = agent.steps.find((s) => s.run?.includes("--phase agent"))!;
+    for (const engine of ENGINES) {
+      expect(step.env?.[KEY[engine]], engine).toBe(
+        `\${{ (needs.prepare.outputs.implement-engine == '${engine}' || needs.prepare.outputs.review-engine == '${engine}') && secrets.${KEY[engine]} || '' }}`,
+      );
+    }
+    const keys = JSON.stringify(agent).match(/secrets\.[A-Z_]+/g) ?? [];
+    expect([...new Set(keys)].sort()).toEqual(
+      Object.values(KEY)
+        .map((k) => `secrets.${k}`)
+        .sort(),
+    );
+    // 입력은 env로만 넘긴다(run 스크립트에 보간하지 않는다).
+    expect(wf.env?.PR).toBe("${{ inputs.pr }}");
+    expect(wf.env?.ISSUE).toBe("${{ inputs.issue }}");
+    expect(workCheckout(agent)?.with?.["fetch-depth"]).toBe(0);
   });
 
   it("factory-weekly runs on Mondays and on demand, reports before improving", () => {

@@ -1,0 +1,152 @@
+name: factory-eval-live
+# spec 7.2.4의 수동 옵션: 개선 PR의 base 규칙과 head 규칙으로 증거 이슈 하나를 실제 에이전트로 다시 구현·리뷰해 비교한다.
+# 필수 체크가 아니다. 결과는 PR 코멘트로만 남고 런 기록에는 남지 않는다.
+run-name: factory-eval-live [factory/issue-${{ inputs.issue }}] PR ${{ inputs.pr }}
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 개선 PR 번호
+        required: true
+        type: string
+      issue:
+        description: 다시 구현할 증거 이슈 번호
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: factory-eval-live-${{ inputs.pr }}
+  cancel-in-progress: false
+env:
+  PR: ${{ inputs.pr }}
+  ISSUE: ${{ inputs.issue }}
+  FACTORY_BOT_USER_ID: ${{ vars.FACTORY_BOT_USER_ID }}
+  CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+  CODEX_MODEL: ${{ vars.CODEX_MODEL }}
+  PI_MODEL: ${{ vars.PI_MODEL }}
+jobs:
+  # 팩토리 CLI는 항상 main을 체크아웃한 runtime 디렉토리에서 실행한다. work는 base·head 작업 트리를 만들 저장소다.
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      has-plan: ${{ steps.prepare.outputs.has-plan }}
+      implement-engine: ${{ steps.prepare.outputs.implement-engine }}
+      review-engine: ${{ steps.prepare.outputs.review-engine }}
+      plan-artifact-id: ${{ steps.plan.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: main, path: runtime, persist-credentials: false }
+      - uses: pnpm/action-setup@v6
+        with: { package_json_file: runtime/package.json }
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: runtime/.nvmrc
+          cache: pnpm
+          cache-dependency-path: runtime/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: runtime
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      - id: prepare
+        working-directory: runtime
+        run: |
+          pnpm -s factory eval-live --pr "$PR" --issue "$ISSUE" --phase prepare --state "$RUNNER_TEMP/plan.json"
+          jq -r '"has-plan=\(.plan != null)", "implement-engine=\(.plan.implement.engine // "")", "review-engine=\(.plan.review.engine // "")"' "$RUNNER_TEMP/plan.json" >> "$GITHUB_OUTPUT"
+        env:
+          FACTORY_TOKEN: ${{ steps.app.outputs.token }}
+      - id: plan
+        uses: actions/upload-artifact@v7
+        with:
+          name: factory-plan
+          path: ${{ runner.temp }}/plan.json
+          retention-days: 7
+  agent:
+    needs: prepare
+    if: needs.prepare.outputs.has-plan == 'true'
+    runs-on: ubuntu-latest
+    # 사이드 두 개 × (설치 + 구현 30분 + 리뷰 15분).
+    timeout-minutes: 120
+    # GitHub App 토큰, Cloudflare 시크릿이 없다. 공개 리포 체크아웃에 필요한 읽기 권한만 둔다.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: main, path: runtime, persist-credentials: false }
+      # base·head 커밋을 git worktree로 꺼내므로 전체 이력(모든 브랜치)이 필요하다.
+      - uses: actions/checkout@v7
+        with: { ref: main, path: work, fetch-depth: 0, persist-credentials: false }
+      - uses: pnpm/action-setup@v6
+        with: { package_json_file: runtime/package.json }
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: runtime/.nvmrc
+          cache: pnpm
+          cache-dependency-path: runtime/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: runtime
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.plan-artifact-id }}
+          path: ${{ runner.temp }}/in
+      # Codex CLI의 Linux 샌드박스(bubblewrap)는 비특권 user namespace가 필요하다.
+      # ubuntu-24.04 러너는 AppArmor가 이를 막아 쓰기·명령 실행이 조용히 실패하므로 해제한다.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: agent (GitHub 토큰 없음, 배정된 구현·리뷰 엔진의 키만 있음)
+        working-directory: runtime
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          pnpm -s factory eval-live --pr "$PR" --issue "$ISSUE" --phase agent --state "$RUNNER_TEMP/in/plan.json" --outcome "$RUNNER_TEMP/out/outcome.json"
+        env:
+          FACTORY_WORKDIR: ${{ github.workspace }}/work
+          ANTHROPIC_API_KEY: ${{ (needs.prepare.outputs.implement-engine == 'claude' || needs.prepare.outputs.review-engine == 'claude') && secrets.ANTHROPIC_API_KEY || '' }}
+          CODEX_API_KEY: ${{ (needs.prepare.outputs.implement-engine == 'codex' || needs.prepare.outputs.review-engine == 'codex') && secrets.CODEX_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ (needs.prepare.outputs.implement-engine == 'pi' || needs.prepare.outputs.review-engine == 'pi') && secrets.DEEPSEEK_API_KEY || '' }}
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: factory-outcome
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: ignore
+          retention-days: 7
+  publish:
+    needs: [prepare, agent]
+    # 취소된 run은 publish하지 않는다. agent job 실패·시간 초과는 publish가 crashed()로 처리한다.
+    if: ${{ !cancelled() && needs.prepare.outputs.has-plan == 'true' && needs.agent.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with: { ref: main, path: runtime, persist-credentials: false }
+      - uses: pnpm/action-setup@v6
+        with: { package_json_file: runtime/package.json }
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: runtime/.nvmrc
+          cache: pnpm
+          cache-dependency-path: runtime/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: runtime
+      # 계획은 prepare job이 올린 artifact(ID 고정)에서만 읽는다.
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.plan-artifact-id }}
+          path: ${{ runner.temp }}/in
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: factory-outcome
+          path: ${{ runner.temp }}/out
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.FACTORY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+      - working-directory: runtime
+        run: pnpm -s factory eval-live --pr "$PR" --issue "$ISSUE" --phase publish --state "$RUNNER_TEMP/in/plan.json" --outcome "$RUNNER_TEMP/out/outcome.json"
+        env:
+          FACTORY_TOKEN: ${{ steps.app.outputs.token }}

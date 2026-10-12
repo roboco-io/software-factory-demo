@@ -151,6 +151,268 @@ describe("createOctokitPort", () => {
     expect(calls.filter((c) => c.startsWith("POST"))).toEqual(["POST /graphql"]);
   });
 
+  describe("syncBoardStatus", () => {
+    const spec = { title: "Software Factory", field: "Factory", options: ["new", "approved"] };
+    const board = (id: string) => ({
+      id,
+      title: "Software Factory",
+      url: "https://x/" + id,
+      fields: {
+        nodes: [
+          {},
+          {
+            id: "F1",
+            name: "Factory",
+            options: [
+              { id: "O_new", name: "new" },
+              { id: "O_approved", name: "approved" },
+            ],
+          },
+        ],
+      },
+    });
+    const graphql = (reply: (q: string, v: Record<string, unknown>) => unknown, sent: string[]) =>
+      (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+        );
+        const body = JSON.parse(String(init?.body)) as {
+          query: string;
+          variables: Record<string, unknown>;
+        };
+        sent.push(body.query.trim().split(/[\s({]/)[0] + ":" + JSON.stringify(body.variables));
+        return withUrl(
+          new Response(JSON.stringify({ data: reply(body.query, body.variables) }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+          url,
+        );
+      }) as typeof fetch;
+
+    it("returns ambiguous without mutating when two boards share the title", async () => {
+      const sent: string[] = [];
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: graphql(
+          () => ({
+            organization: { id: "ORG", projectsV2: { nodes: [board("P1"), board("P2")] } },
+          }),
+          sent,
+        ),
+      });
+      expect(await gh.syncBoardStatus(spec, 5, "approved")).toBe("ambiguous");
+      expect(sent.every((s) => s.startsWith("query"))).toBe(true);
+    });
+
+    it("returns no-board when none matches", async () => {
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: graphql(() => ({ organization: { id: "ORG", projectsV2: { nodes: [] } } }), []),
+      });
+      expect(await gh.syncBoardStatus(spec, 5, "approved")).toBe("no-board");
+    });
+
+    it("adds the item then sets the single-select option by id", async () => {
+      const sent: string[] = [];
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: graphql((q) => {
+          if (q.includes("organization("))
+            return { organization: { id: "ORG", projectsV2: { nodes: [board("P1")] } } };
+          if (q.includes("repository(")) return { repository: { issue: { id: "ISSUE_5" } } };
+          if (q.includes("addProjectV2ItemById"))
+            return { addProjectV2ItemById: { item: { id: "ITEM" } } };
+          return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM" } } };
+        }, sent),
+      });
+      expect(await gh.syncBoardStatus(spec, 5, "approved")).toBe("synced");
+      const muts = sent.filter((s) => s.startsWith("mutation"));
+      expect(muts).toHaveLength(2);
+      expect(muts[0]).toContain('"projectId":"P1"');
+      expect(muts[0]).toContain('"contentId":"ISSUE_5"');
+      expect(muts[1]).toContain('"itemId":"ITEM"');
+      expect(muts[1]).toContain('"optionId":"O_approved"');
+    });
+
+    it("sends every board GraphQL call with an abort signal and no request option in the variables", async () => {
+      const sent: string[] = [];
+      const signals: (AbortSignal | null | undefined)[] = [];
+      const inner = graphql((q) => {
+        if (q.includes("organization("))
+          return { organization: { id: "ORG", projectsV2: { nodes: [board("P1")] } } };
+        if (q.includes("repository(")) return { repository: { issue: { id: "ISSUE_5" } } };
+        if (q.includes("addProjectV2ItemById"))
+          return { addProjectV2ItemById: { item: { id: "ITEM" } } };
+        return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM" } } };
+      }, sent);
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: ((i: string | URL | Request, init?: RequestInit) => {
+          signals.push(init?.signal);
+          return inner(i, init);
+        }) as typeof fetch,
+      });
+      expect(await gh.syncBoardStatus(spec, 5, "approved")).toBe("synced");
+      expect(signals).toHaveLength(4);
+      for (const sig of signals) expect(sig).toBeInstanceOf(AbortSignal);
+      expect(sent.join("\n")).not.toContain("request");
+    });
+  });
+
+  describe("ensureBoard", () => {
+    const spec = { title: "Software Factory", field: "Factory", options: ["new", "approved"] };
+    const withField = {
+      id: "P1",
+      title: "Software Factory",
+      url: "https://x/P1",
+      fields: {
+        nodes: [
+          {
+            id: "F1",
+            name: "Factory",
+            options: [
+              { id: "a", name: "new" },
+              { id: "b", name: "approved" },
+            ],
+          },
+        ],
+      },
+    };
+    // Routes REST (repos.get) and GraphQL separately; GraphQL replies come from `reply`.
+    const mk = (
+      reply: (q: string) => unknown,
+      sent: { q: string; v: Record<string, unknown> }[],
+      failOn?: string,
+    ) =>
+      (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+        );
+        const json = (status: number, body: unknown) =>
+          withUrl(
+            new Response(JSON.stringify(body), {
+              status,
+              headers: { "content-type": "application/json" },
+            }),
+            url,
+          );
+        if (!url.pathname.endsWith("/graphql")) return json(200, { node_id: "REPO_NODE" });
+        const body = JSON.parse(String(init?.body)) as {
+          query: string;
+          variables: Record<string, unknown>;
+        };
+        sent.push({ q: body.query, v: body.variables });
+        if (failOn && body.query.includes(failOn))
+          return json(200, { errors: [{ message: "denied" }] });
+        return json(200, { data: reply(body.query) });
+      }) as typeof fetch;
+    const reply = (nodes: unknown[]) => (q: string) => {
+      if (q.includes("organization("))
+        return { organization: { id: "ORG", projectsV2: { nodes } } };
+      if (q.includes("createProjectV2("))
+        return { createProjectV2: { projectV2: { id: "NEW", url: "https://x/NEW" } } };
+      return {};
+    };
+    const names = (sent: { q: string }[]) =>
+      sent.map(
+        (s) =>
+          /(createProjectV2Field|createProjectV2|updateProjectV2|organization)\b/.exec(s.q)?.[1],
+      );
+
+    it("creates the board, field, then makes it public when absent", async () => {
+      const sent: { q: string; v: Record<string, unknown> }[] = [];
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: mk(reply([]), sent),
+      });
+      expect(await gh.ensureBoard(spec)).toEqual({ created: true, url: "https://x/NEW" });
+      expect(names(sent)).toEqual([
+        "organization",
+        "createProjectV2",
+        "createProjectV2Field",
+        "updateProjectV2",
+      ]);
+      expect(sent[1]!.v).toEqual({
+        ownerId: "ORG",
+        title: "Software Factory",
+        repositoryId: "REPO_NODE",
+      });
+      expect(sent[2]!.v).toEqual({
+        input: {
+          projectId: "NEW",
+          dataType: "SINGLE_SELECT",
+          name: "Factory",
+          singleSelectOptions: [
+            { name: "new", color: "GRAY", description: "" },
+            { name: "approved", color: "GRAY", description: "" },
+          ],
+        },
+      });
+      expect(sent[3]!.v).toEqual({ projectId: "NEW" });
+      expect(sent[3]!.q).toContain("public: true");
+    });
+
+    it("still reports created when making the board public fails", async () => {
+      const sent: { q: string; v: Record<string, unknown> }[] = [];
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: mk(reply([]), sent, "updateProjectV2("),
+      });
+      expect(await gh.ensureBoard(spec)).toEqual({ created: true, url: "https://x/NEW" });
+      expect(names(sent).at(-1)).toBe("updateProjectV2");
+    });
+
+    it("sends no mutation when the board and field already exist", async () => {
+      const sent: { q: string; v: Record<string, unknown> }[] = [];
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: mk(reply([withField]), sent),
+      });
+      expect(await gh.ensureBoard(spec)).toEqual({ created: false, url: "https://x/P1" });
+      expect(sent.some((s) => s.q.trim().startsWith("mutation"))).toBe(false);
+    });
+
+    it("creates only the missing field when the board exists without it", async () => {
+      const sent: { q: string; v: Record<string, unknown> }[] = [];
+      const bare = { ...withField, fields: { nodes: [{}] } };
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: mk(reply([bare]), sent),
+      });
+      expect(await gh.ensureBoard(spec)).toEqual({ created: false, url: "https://x/P1" });
+      expect(names(sent)).toEqual(["organization", "createProjectV2Field"]);
+      expect((sent[1]!.v.input as { projectId: string }).projectId).toBe("P1");
+    });
+
+    it("syncBoardStatus throws when the field is missing", async () => {
+      const bare = { ...withField, fields: { nodes: [{}] } };
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: mk(reply([bare]), []),
+      });
+      await expect(gh.syncBoardStatus(spec, 5, "approved")).rejects.toThrow(/보드 필드 없음/);
+    });
+  });
+
   it("dispatches workflows on main", async () => {
     const calls: string[] = [];
     const gh = port([{ method: "POST", path: /dispatches$/, status: 204, body: null }], calls);
