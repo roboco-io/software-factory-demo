@@ -37,7 +37,7 @@ export default tseslint.config(
         "error",
         {
           selector:
-            "CallExpression[callee.property.name='json'] > ObjectExpression:first-child > Property[key.name='errors'][value.type='ObjectExpression']",
+            "CallExpression[callee.property.name='json'] > ObjectExpression:first-child > Property:matches([key.name='errors'], [key.value='errors'])[value.type='ObjectExpression']",
           message:
             'c.json({ errors: ... })로 오류를 직접 반환하지 말고 throw new ApiError(422, { field: ["message"] })를 사용한다.',
         },
