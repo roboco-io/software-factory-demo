@@ -20,6 +20,21 @@ describe("data", () => {
   it("drops lines missing required fields", () => {
     expect(parseRuns(`${line}\n{"ts":"x"}\n\n`)).toHaveLength(1);
   });
+  it("keeps explicit model names and normalizes unrecorded or malformed models to null", () => {
+    const original = JSON.parse(line);
+    const rows = [
+      { ...original, model: "gpt-6.1-sol" },
+      original,
+      { ...original, model: "   " },
+      { ...original, model: 123 },
+    ];
+    expect(parseRuns(rows.map((r) => JSON.stringify(r)).join("\n")).map((r) => r.model)).toEqual([
+      "gpt-6.1-sol",
+      null,
+      null,
+      null,
+    ]);
+  });
   it("lists recent months oldest first across a year boundary", () => {
     expect(recentMonths(new Date("2026-10-12T00:00:00Z"), 3)).toEqual([
       "2026-08",

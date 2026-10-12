@@ -5,6 +5,7 @@ export interface Run {
   issue: number;
   role: string;
   engine: string | null;
+  model?: string | null;
   ok: boolean;
   costUsd: number | null;
   failureReason: string | null;
@@ -33,6 +34,7 @@ export function parseRuns(text: string): Run[] {
         out.push({
           ...v,
           engine: v.engine ?? null,
+          model: typeof v.model === "string" && v.model.trim() ? v.model : null,
           costUsd: typeof v.costUsd === "number" ? v.costUsd : null,
           failureReason: v.failureReason ?? null,
         });
