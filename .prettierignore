@@ -8,3 +8,4 @@ apps/web/public/styles.css
 docs/superpowers/
 .superpowers/
 factory/prompts/
+factory/evals/**
