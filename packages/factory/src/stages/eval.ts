@@ -1,5 +1,3 @@
-import { createRequire } from "node:module";
-import path from "node:path";
 import { z } from "zod";
 import { scrubEnv } from "../agents/env";
 import { detects, loadCases, type Detector, type LoadedCase } from "../policy/eval-case";
@@ -66,10 +64,15 @@ export interface EvalResult {
   pr: number;
   ok: boolean;
   reasons: string[];
-  newCases: { slug: string; base: boolean; head: boolean }[];
+  // base는 새 케이스를 base 규칙으로 판정했을 때의 결과다. 개선 PR이 아니면 판정하지 않으므로 null이다.
+  newCases: { slug: string; base: boolean | null; head: boolean }[];
   regressions: string[];
   deleted: string[];
   loadErrors: string[];
+}
+
+function sameCase(a: LoadedCase, b: LoadedCase): boolean {
+  return JSON.stringify(a.spec) === JSON.stringify(b.spec) && a.fixtureText === b.fixtureText;
 }
 
 export async function judgeEval(
@@ -94,27 +97,44 @@ export async function judgeEval(
       return false;
     }
   };
-  const baseSlugs = new Set(base.cases.map((c) => c.slug));
+  const baseBySlug = new Map(base.cases.map((c) => [c.slug, c]));
   const headSlugs = new Set(head.cases.map((c) => c.slug));
-  const deleted = [...baseSlugs].filter((s) => !headSlugs.has(s));
+  const deleted = [...baseBySlug.keys()].filter((s) => !headSlugs.has(s));
   if (deleted.length > 0 && !plan.allowDeletion) {
     reasons.push(`이 PR은 평가 케이스를 삭제할 수 없다: ${deleted.join(", ")}`);
   }
+  const newOnes = head.cases.filter((c) => !baseBySlug.has(c.slug));
+  const existing = head.cases.filter((c) => baseBySlug.has(c.slug));
+
+  // base 쪽 판정을 모두 끝낸 뒤에 head 쪽 판정을 시작한다. head 코드(ESLint 설정)가 base 판정에
+  // 영향을 주지 못하게 하기 위한 순서다. 개선 PR만 새 케이스를 base 규칙으로 판정한다.
+  const baseResult = new Map<string, boolean>();
+  if (plan.requireNewCase) {
+    for (const c of newOnes) baseResult.set(c.slug, await safeDetects(baseRoot, c));
+  }
+
   const newCases: EvalResult["newCases"] = [];
   const regressions: string[] = [];
-  for (const c of head.cases) {
-    if (baseSlugs.has(c.slug)) {
-      if (!(await safeDetects(headRoot, c))) regressions.push(c.slug);
-      continue;
+  for (const c of existing) {
+    const orig = baseBySlug.get(c.slug)!;
+    let ok = await safeDetects(headRoot, c);
+    if (!plan.allowDeletion) {
+      // 봇 PR은 기존 케이스를 바꿀 수 없고, base 정의 그대로 head에서 계속 잡혀야 한다.
+      if (!sameCase(orig, c)) {
+        reasons.push(`기존 평가 케이스 ${c.slug}를 봇 PR이 바꿨다.`);
+      }
+      if (!(await safeDetects(headRoot, orig))) ok = false;
     }
-    // base 판정: head가 정의한 케이스(픽스처 포함)를 base 트리의 설정·프롬프트로 판정한다.
+    if (!ok) regressions.push(c.slug);
+  }
+  for (const c of newOnes) {
     const r = {
       slug: c.slug,
-      base: await safeDetects(baseRoot, c),
+      base: plan.requireNewCase ? (baseResult.get(c.slug) ?? false) : null,
       head: await safeDetects(headRoot, c),
     };
     newCases.push(r);
-    if (r.base) {
+    if (r.base === true) {
       reasons.push(`새 케이스 ${c.slug}를 base도 이미 잡는다. 이 PR이 바꾼 것이 없다는 뜻이다.`);
     } else if (!r.head) {
       reasons.push(`새 케이스 ${c.slug}를 head도 잡지 못한다.`);
@@ -137,24 +157,51 @@ export async function judgeEval(
   };
 }
 
-interface EslintLike {
-  lintText(
-    text: string,
-    o: { filePath: string },
-  ): Promise<{ messages: { severity: number; ruleId: string | null }[] }[]>;
-}
+const ESLINT_TIMEOUT_MS = 2 * 60_000;
 
-// 이 함수는 PR 코드(head의 eslint.config.js)를 실행한다. 토큰이 없는 eval-run job에서만 부른다.
-export function eslintDetector(): Detector {
+// ESLint를 트리 루트에서 자식 프로세스로 실행한다. PR 코드(head의 eslint.config.js)가 이 프로세스를
+// 종료시키거나 공유 상태를 바꾸지 못하게 한다. 토큰이 없는 eval-run job에서만 부른다.
+export function eslintDetector(deps: Pick<StageDeps, "spawn" | "settings">): Detector {
   return {
     async lint(treeRoot, text, asPath) {
-      const req = createRequire(path.join(treeRoot, "package.json"));
-      const { ESLint } = req("eslint") as { ESLint: new (o: { cwd: string }) => EslintLike };
-      const eslint = new ESLint({ cwd: treeRoot });
-      const results = await eslint.lintText(text, { filePath: path.join(treeRoot, asPath) });
-      // 무시 대상 파일은 severity 1 경고만 나오므로 빈 목록이 된다.
-      return results.flatMap((r) =>
-        r.messages.filter((m) => m.severity === 2 && m.ruleId).map((m) => m.ruleId as string),
+      const res = await deps.spawn(
+        "pnpm",
+        [
+          "exec",
+          "eslint",
+          "--stdin",
+          "--stdin-filename",
+          asPath,
+          "-f",
+          "json",
+          "--no-warn-ignored",
+        ],
+        {
+          cwd: treeRoot,
+          env: scrubEnv(deps.settings.env),
+          input: text,
+          signal: AbortSignal.timeout(ESLINT_TIMEOUT_MS),
+        },
+      );
+      // 종료 코드 0은 위반 없음, 1은 위반 있음이다. 그 밖의 코드나 JSON이 아닌 출력은 판정 불가다.
+      if (res.code !== 0 && res.code !== 1) {
+        throw new Error(
+          `ESLint가 종료 코드 ${res.code}로 끝났다: ${res.stderr.trim().split("\n")[0] ?? ""}`,
+        );
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(res.stdout);
+      } catch {
+        throw new Error("ESLint 출력을 JSON으로 읽지 못했다");
+      }
+      if (!Array.isArray(parsed)) throw new Error("ESLint 출력 형식이 배열이 아니다");
+      // 무시 대상 파일은 결과가 비므로 빈 목록이 된다.
+      return (parsed as { messages?: { severity: number; ruleId: string | null }[] }[]).flatMap(
+        (r) =>
+          (r.messages ?? [])
+            .filter((m) => m.severity === 2 && m.ruleId)
+            .map((m) => m.ruleId as string),
       );
     },
   };
@@ -179,10 +226,10 @@ export async function runEval(
     loadErrors: [],
   });
   const env = scrubEnv(deps.settings.env);
-  const exec = async (cmd: string, args: string[]) => {
+  const spawnIn = async (cwd: string, cmd: string, args: string[]) => {
     try {
       return await deps.spawn(cmd, args, {
-        cwd: headRoot,
+        cwd,
         env,
         signal: AbortSignal.timeout(EVAL_STEP_TIMEOUT_MS),
       });
@@ -190,19 +237,26 @@ export async function runEval(
       return { code: null, stdout: "", stderr: String(e) };
     }
   };
+  const exec = (cmd: string, args: string[]) => spawnIn(headRoot, cmd, args);
   const head = await exec("git", ["rev-parse", "--verify", "HEAD^{commit}"]);
   if (head.code !== 0 || head.stdout.trim() !== plan.headSha) {
     return fail(
       `작업 트리 head(${head.stdout.trim() || "알 수 없음"})가 판정 대상 ${plan.headSha}와 다르다.`,
     );
   }
+  const baseHead = await spawnIn(baseRoot, "git", ["rev-parse", "--verify", "HEAD^{commit}"]);
+  if (baseHead.code !== 0 || baseHead.stdout.trim() !== plan.baseSha) {
+    return fail(
+      `base 작업 트리(${baseHead.stdout.trim() || "알 수 없음"})가 판정 대상 ${plan.baseSha}와 다르다.`,
+    );
+  }
   const install = await exec("pnpm", ["install", "--frozen-lockfile"]);
   if (install.code !== 0) return fail("head 트리의 의존성 설치가 실패했다.");
-  return judgeEval(plan, baseRoot, headRoot, eslintDetector());
+  return judgeEval(plan, baseRoot, headRoot, eslintDetector(deps));
 }
 
 export function renderEvalText(r: EvalResult): string {
-  const label = (b: boolean) => (b ? "잡음" : "못 잡음");
+  const label = (b: boolean | null) => (b === null ? "판정 안 함" : b ? "잡음" : "못 잡음");
   return [
     `eval ${r.ok ? "통과" : "실패"}(PR #${r.pr})`,
     ...r.reasons,
