@@ -9,9 +9,10 @@ import { writeMarker } from "../src/report/text";
 import { IMPROVE_MARKER } from "../src/stages/collect";
 import { evalLiveStage, renderEvalLiveComment } from "../src/stages/eval-live";
 import { runPhase } from "../src/stages/phased";
-import { BOT, makeTestDeps, openBotPr, type TestHarness } from "./helpers";
+import { BOT, makeTestDeps, type TestHarness } from "./helpers";
 
 const HEAD_SHA = "c".repeat(40);
+const MERGE_BASE = "b".repeat(40);
 const HEAD_RULE = "HEAD-RULE-MARKER";
 
 const review = (categories: string[]) => ({
@@ -47,6 +48,9 @@ function fakeSpawn(calls: string[]): SpawnFn {
           appendFileSync(path.join(dir, "factory/prompts", f), `\n${HEAD_RULE}\n`);
       }
       return { code: 0, stdout: "", stderr: "" };
+    }
+    if (cmd === "git" && args[0] === "merge-base") {
+      return { code: 0, stdout: `${MERGE_BASE}\n`, stderr: "" };
     }
     if (cmd === "git" && args[0] === "diff") {
       return { code: 0, stdout: "diff --git a/x.ts b/x.ts\n+++ b/x.ts\n+x", stderr: "" };
@@ -111,7 +115,8 @@ describe("eval-live", () => {
 
     const adds = calls.filter((c) => c.startsWith("git worktree add"));
     expect(adds).toHaveLength(2);
-    expect(adds[0]).toContain(h.git.baseSha);
+    expect(adds[0]).toContain(MERGE_BASE);
+    expect(calls).toContain(`git merge-base origin/main ${HEAD_SHA}`);
     expect(adds[1]).toContain(HEAD_SHA);
     expect(calls.filter((c) => c.startsWith("git worktree remove"))).toHaveLength(2);
     expect(calls.filter((c) => c === "pnpm install --frozen-lockfile")).toHaveLength(2);
@@ -150,6 +155,7 @@ describe("eval-live", () => {
       issue: 2,
       key: "review:error-format",
       baseSha: "a".repeat(40),
+      baseIsMergeBase: true,
       headSha: HEAD_SHA,
       implementVars: {},
       issueTitle: "t",
@@ -200,16 +206,49 @@ describe("eval-live", () => {
   it.each([
     ["a human PR", (h: TestHarness, pr: number) => (h.gh.pulls.get(pr)!.author = "someone")],
     ["a closed PR", (h: TestHarness, pr: number) => (h.gh.pulls.get(pr)!.state = "closed")],
-  ])("does nothing for %s", async (_name, mutate) => {
+  ])("skips with an explanatory comment for %s", async (_name, mutate) => {
     const h = makeTestDeps({ spawn: fakeSpawn([]) });
     const { pr, issue } = await improvePr(h);
     mutate(h, pr);
     expect(await evalLiveStage.prepare(h.deps, { pr, issue })).toBeNull();
+    const [comment] = await prComments(h, pr);
+    expect(comment).toContain("eval-live를 실행하지 않았다.");
   });
 
-  it("does nothing for a bot implement PR opened by the factory", async () => {
-    const h = makeTestDeps({ spawn: fakeSpawn([]) });
-    const { pr, issue } = await openBotPr(h);
+  it("skips with the pause reason and runs no agent when the factory is paused", async () => {
+    const implement = createFakeAdapter([]);
+    const h = makeTestDeps({
+      adapters: { claude: implement, codex: createFakeAdapter([]) },
+      spawn: fakeSpawn([]),
+      settings: { paused: true },
+    });
+    const { pr, issue } = await improvePr(h);
     expect(await evalLiveStage.prepare(h.deps, { pr, issue })).toBeNull();
+    const [comment] = await prComments(h, pr);
+    expect(comment).toContain("eval-live를 실행하지 않았다.");
+    expect(comment).toContain("FACTORY_PAUSED");
+    expect(implement.calls).toHaveLength(0);
+  });
+
+  it("falls back to origin/main and says so when the merge-base cannot be computed", async () => {
+    const spawn: SpawnFn = async (cmd, args) =>
+      cmd === "git" && args[0] === "merge-base"
+        ? { code: 1, stdout: "", stderr: "bad object" }
+        : { code: 0, stdout: "", stderr: "" };
+    const h = makeTestDeps({ spawn });
+    const { pr, issue } = await improvePr(h);
+    const plan = await evalLiveStage.prepare(h.deps, { pr, issue });
+    expect(plan).toMatchObject({ baseSha: h.git.baseSha, baseIsMergeBase: false });
+    const md = renderEvalLiveComment(plan!, {
+      sides: ["base", "head"].map((side) => ({
+        side: side as "base" | "head",
+        implemented: true,
+        reviewed: true,
+        categories: [],
+        costUsd: 0,
+        note: "",
+      })),
+    });
+    expect(md).toContain("merge-base로 구하지 못해 현재 origin/main을 썼다");
   });
 });
