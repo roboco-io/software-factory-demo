@@ -10,6 +10,7 @@
 - 다음 경로는 수정하지 않는다: .github/, factory/, packages/factory/, AGENTS.md, CLAUDE.md, scripts/, tests/realworld/vendor/, tests/smoke/, apps/web/e2e-smoke/. 이 경로를 바꾸면 변경 전체가 거부된다.
 - 의존성을 추가하지 않는다(package.json, pnpm-lock.yaml을 바꾸지 않는다). 꼭 필요하면 바꾸지 말고 요약에 이유를 쓴다.
 - git commit, git push를 하지 않는다. 커밋은 팩토리가 한다.
+- API 오류 응답은 라우트 핸들러에서 `return c.json({ errors: { <필드>: ["<메시지>"] } }, <상태>)`로 직접 반환한다. 오류 헬퍼를 import하지 않는다.
 - 끝내기 전에 pnpm format을 실행하고, pnpm typecheck, pnpm lint, pnpm test가 통과하는지 확인한다.
 
 ## 버그 재현 규칙
