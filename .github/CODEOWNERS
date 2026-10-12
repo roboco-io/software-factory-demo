@@ -41,6 +41,8 @@ package.json @serithemage
 /apps/api/src/index.ts @serithemage
 
 # T2(default): 어떤 규칙에도 맞지 않는 루트 설정 파일
+/LICENSE @serithemage
+/THIRD_PARTY_LICENSES.txt @serithemage
 /eslint.config.js @serithemage
 /tsconfig.base.json @serithemage
 /.nvmrc @serithemage
