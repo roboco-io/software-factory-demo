@@ -26,36 +26,71 @@ export function lastWeeks(now: Date, count: number): string[] {
 
 const weekOf = (r: Run) => isoWeek(new Date(r.ts));
 
-// 주별로: implement 런이 있는 이슈 가운데 deploy 성공 기록이 있고 실패한 런이 없는 이슈의 수.
+// implement 런이 있는 이슈 가운데 deploy 성공 기록이 있고 실패한 런이 없는 이슈의 수.
+function completionOf(runs: Run[]): { k: number; n: number } {
+  const implemented = new Set(
+    runs.filter((r) => r.role === "implement" && r.issue > 0).map((r) => r.issue),
+  );
+  let k = 0;
+  for (const issue of implemented) {
+    const mine = runs.filter((r) => r.issue === issue);
+    if (mine.some((r) => r.role === "deploy" && r.ok) && mine.every((r) => r.ok)) k++;
+  }
+  return { k, n: implemented.size };
+}
+
 export function weeklyCompletion(
   runs: Run[],
   weeks: string[],
 ): { week: string; k: number; n: number }[] {
-  return weeks.map((week) => {
-    const inWeek = runs.filter((r) => weekOf(r) === week);
-    const implemented = new Set(
-      inWeek.filter((r) => r.role === "implement" && r.issue > 0).map((r) => r.issue),
-    );
-    let k = 0;
-    for (const issue of implemented) {
-      const mine = inWeek.filter((r) => r.issue === issue);
-      if (mine.some((r) => r.role === "deploy" && r.ok) && mine.every((r) => r.ok)) k++;
-    }
-    return { week, k, n: implemented.size };
-  });
+  return weeks.map((week) => ({ week, ...completionOf(runs.filter((r) => weekOf(r) === week)) }));
+}
+
+// 런 기록이 처음 있는 주부터 자른다. 축이 너무 짧아지지 않게 마지막 두 주는 남긴다.
+export function activeWeeks(runs: Run[], weeks: string[]): string[] {
+  const seen = new Set(runs.map(weekOf));
+  const first = weeks.findIndex((w) => seen.has(w));
+  const start = first < 0 ? weeks.length - 2 : Math.min(first, weeks.length - 2);
+  return weeks.slice(Math.max(0, start));
+}
+
+export interface Summary {
+  deployed: number;
+  completion: { k: number; n: number };
+  costUsd: number;
+  uncostedEngines: string[];
+  improvements: number;
+}
+
+// 대시보드 상단 요약. completion은 창 전체 기준이다.
+export function summary(runs: Run[], improvements: number): Summary {
+  const engines = engineSummary(runs);
+  return {
+    deployed: new Set(runs.filter((r) => r.role === "deploy" && r.ok).map((r) => r.issue)).size,
+    completion: completionOf(runs),
+    costUsd: engines.reduce((a, e) => a + e.costUsd, 0),
+    uncostedEngines: engines.filter((e) => e.costRuns === 0).map((e) => e.engine),
+    improvements,
+  };
+}
+
+export function recentRuns(runs: Run[], count = 10): Run[] {
+  return [...runs].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts)).slice(0, count);
 }
 
 export function engineSummary(
   runs: Run[],
-): { engine: string; ok: number; n: number; costUsd: number }[] {
-  const by = new Map<string, { ok: number; n: number; costUsd: number }>();
+): { engine: string; ok: number; n: number; costUsd: number; costRuns: number }[] {
+  // costRuns: 비용이 기록된 런 수. 0이면 그 엔진은 비용을 보고하지 않는다(예: codex).
+  const by = new Map<string, { ok: number; n: number; costUsd: number; costRuns: number }>();
   for (const r of runs) {
     if (!AGENT_ROLES.has(r.role) || !r.engine) continue;
-    const cur = by.get(r.engine) ?? { ok: 0, n: 0, costUsd: 0 };
+    const cur = by.get(r.engine) ?? { ok: 0, n: 0, costUsd: 0, costRuns: 0 };
     by.set(r.engine, {
       ok: cur.ok + (r.ok ? 1 : 0),
       n: cur.n + 1,
       costUsd: cur.costUsd + (r.costUsd ?? 0),
+      costRuns: cur.costRuns + (r.costUsd === null ? 0 : 1),
     });
   }
   return [...by.entries()]

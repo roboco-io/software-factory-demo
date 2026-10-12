@@ -40,10 +40,21 @@ export function lineChart(input: {
   height?: number;
   yMax?: number;
   percent?: boolean;
+  valueLabels?: boolean;
 }): string {
-  const { labels, series, markers = [], width = 640, height = 240, percent = false } = input;
+  const {
+    labels,
+    series,
+    markers = [],
+    width = 640,
+    height = 240,
+    percent = false,
+    valueLabels = false,
+  } = input;
   const all = series.flatMap((s) => s.values).filter((v): v is number => v !== null);
-  const yMax = input.yMax ?? Math.max(1, ...all);
+  // 횟수 축은 눈금 4칸이 모두 정수가 되도록 최댓값을 4의 배수로 올린다.
+  const yMax =
+    input.yMax ?? (percent ? Math.max(1, ...all) : Math.ceil(Math.max(1, ...all) / 4) * 4);
   const w = width - PAD.l - PAD.r;
   const h = height - PAD.t - PAD.b;
   const xs = labels.map(
@@ -53,13 +64,17 @@ export function lineChart(input: {
   const fmt = percent
     ? (v: number) => `${Math.round(v * 100)}%`
     : (v: number) => String(Math.round(v * 10) / 10);
+  // 값이 같은 선이 서로 가리지 않도록 계열마다 몇 픽셀씩 어긋나게 그린다.
+  const offset = (si: number) => (series.length < 2 ? 0 : (si - (series.length - 1) / 2) * 3);
   let out = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" role="img">`;
   out += frame(width, height, yMax, fmt);
   for (const m of markers) {
     const x = xs[m.index];
     if (x === undefined) continue;
     out += `<line x1="${x}" x2="${x}" y1="${PAD.t}" y2="${PAD.t + h}" stroke="#f59e0b" stroke-dasharray="4 3"/>`;
-    out += `<text x="${x + 3}" y="${PAD.t + 10}" font-size="11" fill="#b45309">${esc(m.label)}</text>`;
+    // 오른쪽 끝 근처의 라벨은 선 왼쪽에 붙여 잘리지 않게 한다.
+    const right = x > width - PAD.r - 40;
+    out += `<text x="${right ? x - 3 : x + 3}" y="${PAD.t + 10}"${right ? ' text-anchor="end"' : ""} font-size="11" fill="#b45309">${esc(m.label)}</text>`;
   }
   series.forEach((s, si) => {
     const color = COLORS[si % COLORS.length];
@@ -70,14 +85,16 @@ export function lineChart(input: {
         pen = false;
         return;
       }
-      d += `${pen ? "L" : "M"}${xs[i]} ${y(v)} `;
+      d += `${pen ? "L" : "M"}${xs[i]} ${y(v) + offset(si)} `;
       pen = true;
     });
     if (d) out += `<path d="${d.trim()}" fill="none" stroke="${color}" stroke-width="2"/>`;
     s.values.forEach((v, i) => {
       if (v === null) return;
       const title = s.titles?.[i] ?? `${s.name} ${labels[i] ?? ""}: ${fmt(v)}`;
-      out += `<circle cx="${xs[i]}" cy="${y(v)}" r="4" fill="${color}"><title>${esc(title)}</title></circle>`;
+      out += `<circle cx="${xs[i]}" cy="${y(v) + offset(si)}" r="4" fill="${color}"><title>${esc(title)}</title></circle>`;
+      if (valueLabels)
+        out += `<text x="${xs[i]}" y="${y(v) - 8}" text-anchor="middle" font-size="11" font-weight="600" fill="${color}">${esc(fmt(v))}</text>`;
     });
   });
   out += xLabels(labels, width, height, xs);
@@ -111,10 +128,11 @@ function legend(names: string[], width: number): string {
 export function barChart(input: {
   labels: string[];
   values: number[];
+  valueText?: string[];
   width?: number;
   height?: number;
 }): string {
-  const { labels, values, width = 640, height = 240 } = input;
+  const { labels, values, valueText, width = 640, height = 240 } = input;
   const yMax = Math.max(1, ...values);
   const w = width - PAD.l - PAD.r;
   const h = height - PAD.t - PAD.b;
@@ -125,6 +143,13 @@ export function barChart(input: {
   values.forEach((v, i) => {
     const bh = (h * v) / yMax;
     out += `<rect x="${(xs[i] ?? 0) - slot * 0.3}" y="${PAD.t + h - bh}" width="${slot * 0.6}" height="${bh}" fill="${COLORS[0]}"><title>${esc(`${labels[i] ?? ""}: ${v}`)}</title></rect>`;
+    const t = valueText?.[i];
+    if (t)
+      // 막대가 짧으면 글자를 막대 위에 어두운 색으로 쓴다.
+      out +=
+        bh >= 20
+          ? `<text x="${xs[i] ?? 0}" y="${PAD.t + h - bh + 14}" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">${esc(t)}</text>`
+          : `<text x="${xs[i] ?? 0}" y="${PAD.t + h - bh - 4}" text-anchor="middle" font-size="11" font-weight="600" fill="#374151">${esc(t)}</text>`;
   });
   out += xLabels(labels, width, height, xs);
   return out + "</svg>";
