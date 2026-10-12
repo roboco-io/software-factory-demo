@@ -3,6 +3,8 @@ import {
   BranchNotFoundError,
   ConflictError,
   TooManyFilesError,
+  type BoardSpec,
+  type BoardSyncResult,
   type CheckRun,
   type GitHubPort,
   type MergedPull,
@@ -11,6 +13,33 @@ import {
   type Pull,
 } from "./port";
 import { addedLinesFromPatch } from "../policy/risk";
+
+const FIND_BOARD = `query($org: String!, $q: String!) {
+  organization(login: $org) {
+    id
+    projectsV2(first: 20, query: $q) {
+      nodes {
+        id
+        title
+        url
+        fields(first: 50) {
+          nodes { ... on ProjectV2SingleSelectField { id name options { id name } } }
+        }
+      }
+    }
+  }
+}`;
+
+interface BoardInfo {
+  orgId: string;
+  projectId: string;
+  url: string;
+  fieldId: string;
+  options: Map<string, string>;
+}
+
+type BoardLookup =
+  { kind: "found"; board: BoardInfo } | { kind: "none"; orgId: string } | { kind: "ambiguous" };
 
 const MAX_PULL_FILES = 3000;
 
@@ -93,6 +122,38 @@ export function createOctokitPort(o: {
   });
   const base = { owner: o.owner, repo: o.repo };
 
+  let cached: BoardInfo | null = null;
+  async function findBoard(spec: BoardSpec): Promise<BoardLookup> {
+    if (cached) return { kind: "found", board: cached };
+    const res = await octokit.graphql<{
+      organization: {
+        id: string;
+        projectsV2: {
+          nodes: {
+            id: string;
+            title: string;
+            url: string;
+            fields: {
+              nodes: { id?: string; name?: string; options?: { id: string; name: string }[] }[];
+            };
+          }[];
+        };
+      };
+    }>(FIND_BOARD, { org: base.owner, q: spec.title });
+    const org = res.organization;
+    const hits = org.projectsV2.nodes.filter((n) => n.title === spec.title);
+    if (hits.length === 0) return { kind: "none", orgId: org.id };
+    if (hits.length > 1) return { kind: "ambiguous" };
+    const hit = hits[0]!;
+    const field = hit.fields.nodes.find((f) => f.name === spec.field && f.options);
+    if (!field?.id || !field.options) throw new Error(`보드 필드 없음: ${spec.field}`);
+    const options = new Map(field.options.map((o) => [o.name, o.id]));
+    for (const o of spec.options) {
+      if (!options.has(o)) throw new Error(`보드 옵션 없음: ${o}`);
+    }
+    cached = { orgId: org.id, projectId: hit.id, url: hit.url, fieldId: field.id, options };
+    return { kind: "found", board: cached };
+  }
   return {
     async getIssue(n) {
       const { data } = await octokit.rest.issues.get({ ...base, issue_number: n });
@@ -423,6 +484,70 @@ export function createOctokitPort(o: {
         if (statusOf(e) !== 404) throw e;
         await octokit.rest.issues.createLabel({ ...base, name, color, description });
       }
+    },
+    async ensureBoard(spec) {
+      const found = await findBoard(spec);
+      if (found.kind === "found") return { created: false, url: found.board.url };
+      if (found.kind === "ambiguous") throw new Error(`제목이 같은 보드가 둘 이상: ${spec.title}`);
+      const repo = await octokit.rest.repos.get({ ...base });
+      const made = await octokit.graphql<{
+        createProjectV2: { projectV2: { id: string; url: string } };
+      }>(
+        `mutation($ownerId: ID!, $title: String!, $repositoryId: ID!) { createProjectV2(input: {ownerId: $ownerId, title: $title, repositoryId: $repositoryId}) { projectV2 { id url } } }`,
+        { ownerId: found.orgId, title: spec.title, repositoryId: repo.data.node_id },
+      );
+      const project = made.createProjectV2.projectV2;
+      await octokit.graphql(
+        `mutation($input: CreateProjectV2FieldInput!) { createProjectV2Field(input: $input) { projectV2Field { ... on ProjectV2SingleSelectField { id } } } }`,
+        {
+          input: {
+            projectId: project.id,
+            dataType: "SINGLE_SELECT",
+            name: spec.field,
+            singleSelectOptions: spec.options.map((name) => ({
+              name,
+              color: "GRAY",
+              description: "",
+            })),
+          },
+        },
+      );
+      try {
+        await octokit.graphql(
+          `mutation($projectId: ID!) { updateProjectV2(input: {projectId: $projectId, public: true}) { projectV2 { id } } }`,
+          { projectId: project.id },
+        );
+      } catch (e) {
+        // 조직 설정이 공개 보드를 막을 수 있다. 보드 자체는 만들어졌으므로 로그만 남긴다.
+        console.warn(`board: 공개 전환 실패: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return { created: true, url: project.url };
+    },
+    async syncBoardStatus(spec, issue, option): Promise<BoardSyncResult> {
+      const found = await findBoard(spec);
+      if (found.kind === "none") return "no-board";
+      if (found.kind === "ambiguous") return "ambiguous";
+      const { board } = found;
+      const optionId = board.options.get(option);
+      if (!optionId) throw new Error(`보드 옵션 없음: ${option}`);
+      const iss = await octokit.graphql<{ repository: { issue: { id: string } } }>(
+        `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { id } } }`,
+        { owner: base.owner, name: base.repo, number: issue },
+      );
+      const added = await octokit.graphql<{ addProjectV2ItemById: { item: { id: string } } }>(
+        `mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }`,
+        { projectId: board.projectId, contentId: iss.repository.issue.id },
+      );
+      await octokit.graphql(
+        `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: {singleSelectOptionId: $optionId}}) { projectV2Item { id } } }`,
+        {
+          projectId: board.projectId,
+          itemId: added.addProjectV2ItemById.item.id,
+          fieldId: board.fieldId,
+          optionId,
+        },
+      );
+      return "synced";
     },
     async createOrphanBranch(branch, files, message) {
       try {

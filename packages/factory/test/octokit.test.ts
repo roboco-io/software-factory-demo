@@ -151,6 +151,97 @@ describe("createOctokitPort", () => {
     expect(calls.filter((c) => c.startsWith("POST"))).toEqual(["POST /graphql"]);
   });
 
+  describe("syncBoardStatus", () => {
+    const spec = { title: "Software Factory", field: "Factory", options: ["new", "approved"] };
+    const board = (id: string) => ({
+      id,
+      title: "Software Factory",
+      url: "https://x/" + id,
+      fields: {
+        nodes: [
+          {},
+          {
+            id: "F1",
+            name: "Factory",
+            options: [
+              { id: "O_new", name: "new" },
+              { id: "O_approved", name: "approved" },
+            ],
+          },
+        ],
+      },
+    });
+    const graphql = (reply: (q: string, v: Record<string, unknown>) => unknown, sent: string[]) =>
+      (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+        );
+        const body = JSON.parse(String(init?.body)) as {
+          query: string;
+          variables: Record<string, unknown>;
+        };
+        sent.push(body.query.trim().split(/[\s({]/)[0] + ":" + JSON.stringify(body.variables));
+        return withUrl(
+          new Response(JSON.stringify({ data: reply(body.query, body.variables) }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+          url,
+        );
+      }) as typeof fetch;
+
+    it("returns ambiguous without mutating when two boards share the title", async () => {
+      const sent: string[] = [];
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: graphql(
+          () => ({
+            organization: { id: "ORG", projectsV2: { nodes: [board("P1"), board("P2")] } },
+          }),
+          sent,
+        ),
+      });
+      expect(await gh.syncBoardStatus(spec, 5, "approved")).toBe("ambiguous");
+      expect(sent.every((s) => s.startsWith("query"))).toBe(true);
+    });
+
+    it("returns no-board when none matches", async () => {
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: graphql(() => ({ organization: { id: "ORG", projectsV2: { nodes: [] } } }), []),
+      });
+      expect(await gh.syncBoardStatus(spec, 5, "approved")).toBe("no-board");
+    });
+
+    it("adds the item then sets the single-select option by id", async () => {
+      const sent: string[] = [];
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: graphql((q) => {
+          if (q.includes("organization("))
+            return { organization: { id: "ORG", projectsV2: { nodes: [board("P1")] } } };
+          if (q.includes("repository(")) return { repository: { issue: { id: "ISSUE_5" } } };
+          if (q.includes("addProjectV2ItemById"))
+            return { addProjectV2ItemById: { item: { id: "ITEM" } } };
+          return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM" } } };
+        }, sent),
+      });
+      expect(await gh.syncBoardStatus(spec, 5, "approved")).toBe("synced");
+      const muts = sent.filter((s) => s.startsWith("mutation"));
+      expect(muts).toHaveLength(2);
+      expect(muts[0]).toContain('"projectId":"P1"');
+      expect(muts[0]).toContain('"contentId":"ISSUE_5"');
+      expect(muts[1]).toContain('"itemId":"ITEM"');
+      expect(muts[1]).toContain('"optionId":"O_approved"');
+    });
+  });
+
   it("dispatches workflows on main", async () => {
     const calls: string[] = [];
     const gh = port([{ method: "POST", path: /dispatches$/, status: 204, body: null }], calls);

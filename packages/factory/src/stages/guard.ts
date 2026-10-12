@@ -1,5 +1,6 @@
 import type { RunRecord } from "../runs/store";
 import { stateLabel } from "../state/machine";
+import { reconcileBoard } from "./board";
 import { branchFor, runLink, usedToday, utcDay } from "./common";
 import type { StageDeps } from "./deps";
 
@@ -17,6 +18,7 @@ export interface GuardResult {
   breaker: BreakerState;
   paused: boolean;
   resumed: number[];
+  board: number;
 }
 
 export function evaluateBreaker(runs: RunRecord[], now: Date, since?: Date): BreakerState {
@@ -54,7 +56,7 @@ export async function runGuard(deps: StageDeps): Promise<GuardResult> {
         lastAlert.number,
         `차단기가 다시 작동했다(성공률 ${Math.round((breaker.successRate ?? 0) * 100)}%, ${breaker.total}회 중 ${breaker.succeeded}회 성공).${runLink(deps.settings)}`,
       );
-      return { breaker, paused: true, resumed: [] };
+      return { breaker, paused: true, resumed: [], board: await reconcileBoard(deps) };
     }
     const pct = Math.round((breaker.successRate ?? 0) * 100);
     await deps.gh.createIssue(
@@ -78,5 +80,5 @@ export async function runGuard(deps: StageDeps): Promise<GuardResult> {
       used++;
     }
   }
-  return { breaker, paused, resumed };
+  return { breaker, paused, resumed, board: await reconcileBoard(deps) };
 }
