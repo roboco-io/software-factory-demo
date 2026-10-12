@@ -1,28 +1,100 @@
 # software-factory-demo
 
-GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플리케이션은 [RealWorld](https://github.com/realworld-apps/realworld)(Conduit)이며, 프론트엔드는 GitHub Pages, 백엔드는 Cloudflare Workers + D1에 배포한다.
+**비개발자도 소프트웨어 팩토리의 개념을 이해하고 직접 동작시켜 볼 수 있도록 만든 예시 프로젝트입니다.** 사람이 원하는 변화를 글로 설명하면, AI가 구현하고 검증한 뒤 실제 서비스에 반영하는 과정을 보여 줍니다. 반복되는 실패를 바탕으로 팩토리의 작업 규칙을 고치는 **자가 개선의 개념 검증(PoC)**도 함께 수행합니다.
 
-- 설계: [docs/superpowers/specs/2026-10-11-software-factory-design.md](docs/superpowers/specs/2026-10-11-software-factory-design.md)
+실험 대상은 글을 쓰고 읽고, 다른 사용자를 팔로우하는 예제 서비스 [RealWorld(Conduit)](https://github.com/realworld-apps/realworld)입니다. 이 서비스를 바꾸는 과정을 통해 소프트웨어가 어떻게 만들어지고 개선되는지 관찰할 수 있습니다.
+
+- [예제 서비스 사용하기](https://roboco.io/software-factory-demo/)
+- [팩토리 대시보드 보기](https://roboco.io/software-factory-demo/factory/)
+- [요청과 처리 기록 보기](https://github.com/roboco-io/software-factory-demo/issues)
+- [변경 제안과 검증 결과 보기](https://github.com/roboco-io/software-factory-demo/pulls)
+
+## 소프트웨어 팩토리란?
+
+소프트웨어 팩토리는 **요청을 받아 소프트웨어를 만들고, 검사하고, 배포하며, 사용 중 발견한 문제를 다음 개선으로 연결하는 체계**입니다. 여기서 배포는 바뀐 소프트웨어를 실제 사용자가 쓰는 서비스에 반영하는 일입니다.
+
+이 프로젝트에서는 GitHub를 작업 공간으로 사용합니다. 이슈(Issue)는 요청서, PR(Pull Request)은 변경 제안서입니다. GitHub Actions는 정해진 작업 절차를 실행합니다. AI 에이전트는 그 절차 안에서 구현과 검토를 맡고, 사람은 목표와 완료 기준을 정하며 중요한 변경을 승인합니다.
+
+> 요청 작성 → 사람의 실행 승인 → AI 구현 → 다른 AI의 검토 → 자동 검사 → 병합 → 배포 → 결과 관찰
+
+병합은 검증된 변경을 프로젝트의 기준 버전인 `main`에 합치는 일입니다. 작은 변경은 검사를 통과하면 자동으로 병합합니다. 로그인, 데이터베이스, 팩토리 운영 규칙처럼 영향이 큰 변경은 사람의 승인을 기다립니다.
+
+| 단계           | 이 프로젝트에서 확인할 수 있는 것                                     |
+| -------------- | --------------------------------------------------------------------- |
+| 요청 정리      | AI가 요청의 범위와 완료 조건을 정리한 이슈 댓글                       |
+| 구현과 검토    | AI가 만든 PR과 다른 AI의 검토 결과                                    |
+| 버그 수정 증거 | 재현 테스트가 수정 전에는 실패하고 수정 후에는 통과하는지 확인한 결과 |
+| 권한과 승인    | 변경의 위험 등급에 따라 자동 병합하거나 사람을 기다리는 과정          |
+| 배포와 관찰    | 실제 서비스의 변화와 대시보드의 실행 기록                             |
+| 자가 개선      | 반복 실패를 줄이기 위한 규칙 변경 PR과 검증 결과                      |
+
+## 브라우저에서 체험하기
+
+코드를 설치하지 않고도 서비스와 팩토리의 처리 과정을 살펴볼 수 있습니다.
+
+1. [예제 서비스](https://roboco.io/software-factory-demo/)에서 글을 읽고 화면을 둘러봅니다. 회원가입 후에는 글 작성 등 로그인 기능도 사용할 수 있습니다.
+2. 불편한 점이나 개선 아이디어가 있으면 화면 아래의 **피드백** 버튼으로 의견을 보냅니다. 수집 작업이 실행되면 의견이 GitHub 이슈로 등록됩니다. 예약 수집은 30분 간격이며, GitHub 실행 상황에 따라 늦어질 수 있습니다.
+3. [이슈 목록](https://github.com/roboco-io/software-factory-demo/issues)에서 요청 내용과 AI의 분석 댓글을 확인합니다. 피드백을 보냈다고 구현이 즉시 시작되지는 않습니다. 저장소 쓰기 권한자가 실행을 승인합니다.
+4. [PR 목록](https://github.com/roboco-io/software-factory-demo/pulls)과 [대시보드](https://roboco.io/software-factory-demo/factory/)에서 변경 내용, 검사 결과, 배포까지의 기록을 살펴봅니다.
+
+## 팩토리를 직접 실행하기
+
+실행에 필요한 것은 **코드 작성 능력보다 구체적인 요청과 완료 기준**입니다. 이 저장소에 쓰기 권한이 있고 GitHub에 로그인되어 있다면 다음 순서로 실행할 수 있습니다. 쓰기 권한이 없는 방문자는 위의 피드백 경로로 참여할 수 있습니다.
+
+1. [기능 요청 이슈](https://github.com/roboco-io/software-factory-demo/issues/new?template=feature.yml)를 엽니다. 원하는 변화와 완료 기준을 일상 언어로 적습니다. 예를 들어 다음과 같이 요청할 수 있습니다.
+
+   > 목표: 서비스 화면 아래의 피드백 버튼을 처음 방문한 사람도 쉽게 알아볼 수 있게 해 주세요.
+   >
+   > 완료 기준: 버튼 문구를 “피드백 보내기”로 바꾸고, 기존 피드백 입력 창이 그대로 열려야 합니다.
+
+2. AI가 요청을 분석한 댓글이 달리면, **이슈 댓글에 `@factory go`를 한 줄로 입력**합니다. PR 댓글이 아닌 이슈 댓글에 입력해야 합니다. 코드 블록으로 감싸지 않습니다.
+3. AI가 구현하고 PR을 열면 변경 설명과 검사 결과를 확인합니다. 이슈의 `factory:` 라벨은 현재 작업 상태를 나타냅니다.
+4. 작은 변경은 필수 검사와 검토를 통과하면 자동으로 병합·배포됩니다. 중요한 변경은 코드 소유자(CODEOWNER)의 승인을 기다립니다. `factory:needs-human` 상태가 되면 이슈나 PR에 남은 사유를 확인합니다.
+5. 이슈가 `factory:deployed` 상태가 되고 닫히면 서비스에서 결과를 확인합니다. 실행 중인 작업을 멈추려면 이슈에 `@factory stop`을 입력합니다.
+
+| 이슈 댓글에 입력하는 명령 | 역할                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------- |
+| `@factory go`             | 요청의 구현을 시작하거나, 사람에게 넘어온 요청을 다시 시작합니다.                           |
+| `@factory stop`           | 진행 중인 자동화 작업을 취소하고 사람에게 넘깁니다.                                         |
+| `@factory retry`          | 다시 시작할 수 있는 상태의 요청을 재시도합니다. 이미 진행 중인 작업에는 사용할 수 없습니다. |
+
+이 명령은 모두 저장소 쓰기 권한자가 실행합니다. 자신의 저장소에 팩토리를 설치하려면 아래 운영자 안내의 GitHub App, AI API 키, 배포 환경 설정이 필요합니다. 실행 과정에는 AI API와 호스팅 서비스의 사용 요금이 발생할 수 있습니다.
+
+## 자가 개선 PoC: 실패를 다음 규칙으로
+
+이 프로젝트는 서비스 기능의 개선과 함께, **서비스를 만드는 팩토리 자체의 작업 규칙을 개선할 수 있는지** 실험합니다. 여기서 자가 개선은 AI 모델을 다시 학습시키는 것이 아니라, 에이전트의 작업 지침과 자동 검사 규칙을 고치는 일입니다.
+
+1. 구현과 검토 과정에서 발생한 실패를 실행 기록에 남깁니다.
+2. 같은 범주의 실패가 서로 다른 이슈 3건 이상에서 반복되면 주간 실행이 개선 후보로 선정합니다.
+3. AI가 지침이나 검사 규칙을 바꾸는 PR을 만들고, 새 평가 케이스를 추가합니다.
+4. 자동 검사는 새 케이스의 실패를 이전 규칙은 놓치고 새 규칙은 잡는지 확인합니다. 기존 평가 케이스도 계속 검사합니다.
+5. 사람이 변경을 검토하고 승인한 뒤 병합합니다. 이후 주간 리포트와 대시보드에서 기록을 관찰합니다.
+
+2026년 10월 12일에는 오류 응답을 만드는 잘못된 지시를 의도적으로 넣어 같은 실수를 반복하게 하는 리허설을 수행했습니다. 그 결과 [개선 PR #47](https://github.com/roboco-io/software-factory-demo/pull/47)이 검사 규칙과 평가 케이스를 추가했고, [검증 PR #48](https://github.com/roboco-io/software-factory-demo/pull/48)에서 같은 실수를 자동 검사가 잡는 것을 확인했습니다. 재현 절차는 아래 [실패 패턴 심기](#데모-리허설-실패-패턴-심기)에 남겼습니다.
+
+이 결과는 정해진 실패 유형에 대한 개선 루프의 동작을 보여 주는 PoC입니다. 모든 종류의 실패를 스스로 해결하거나 장기적인 성능 향상을 보장한다는 의미는 아닙니다. 개선 규칙의 병합에는 사람의 검토를 남깁니다.
+
+## 프로젝트의 출발점: 로보코의 소프트웨어 팩토리 연구
+
+이 프로젝트는 **로보코(ROBOCO)의 최근 소프트웨어 팩토리 연구에서 영감을 받아 시작했습니다.** 연구에서 정리한 개발 흐름, 병합 권한, 수정 증거, 실패를 규칙으로 바꾸는 방법을 실제로 실행하고 관찰할 수 있는 예시로 옮겼습니다.
+
+- [바이브 코딩을 넘어서 소프트웨어 팩토리로](https://roboco.io/posts/beyond-vibe-coding-software-factory/)
+- [오픈소스 프로젝트들로부터 배우는 소프트웨어 팩토리 모범사례 (1/4): 판별 기준과 12개 저장소](https://roboco.io/posts/software-factory-best-practices-from-open-source/)
+- [오픈소스 프로젝트들로부터 배우는 소프트웨어 팩토리 모범사례 (2/4): 누가 병합하는가](https://roboco.io/posts/software-factory-who-merges/)
+- [오픈소스 프로젝트들로부터 배우는 소프트웨어 팩토리 모범사례 (3/4): 증거로 거르는 팩토리](https://roboco.io/posts/software-factory-evidence-before-fix/)
+- [오픈소스 프로젝트들로부터 배우는 소프트웨어 팩토리 모범사례 (4/4): 실패를 규칙으로](https://roboco.io/posts/software-factory-failures-into-rules/)
+
+## 개발자·운영자를 위한 참고
+
+아래는 팩토리를 설치하거나 운영하고, 데모를 재현하는 사람을 위한 상세 안내입니다.
+
+- 설계: [소프트웨어 팩토리 설계 문서](docs/superpowers/specs/2026-10-11-software-factory-design.md)
 - 개발 지침: [AGENTS.md](AGENTS.md)
+- 웹: React + Vite, GitHub Pages 배포
+- API: Hono, Cloudflare Workers + D1 배포 — <https://sfd-api.roboco.workers.dev/api>
+- 팩토리: GitHub Issues/Actions, 단계별 AI 에이전트, 위험 정책과 검증 절차
 
-## 배포 URL
-
-- 웹: https://roboco.io/software-factory-demo/
-- API: https://sfd-api.roboco.workers.dev/api
-
-## 보안
-
-- CI의 Cloudflare 토큰(`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`)은 워크플로 전체가 아니라 wrangler 또는 Cloudflare API를 호출하는 단계에만 `env`로 전달한다. 의존성 설치, 웹 빌드, Playwright 단계는 이 토큰을 받지 않는다.
-- Cloudflare 토큰은 `production`·`preview` environment 시크릿으로만 둔다. 팩토리 워크플로(`factory-*.yml`)는 Cloudflare 토큰을 받지 않는다. 봇 PR이 T2·T3 경로를 바꾸면 `preview.yml`의 `policy` job이 프리뷰 배포를 생략한다.
-- 팩토리의 에이전트는 GitHub 토큰이 없는 별도 job(VM)에서 실행되고, prepare job이 배정한 엔진의 API 키 하나만 받는다. push·PR·라벨은 에이전트가 실행된 적 없는 publish job이 새로 발급한 App 토큰으로 한다. publish job은 main을 체크아웃한 별도 디렉토리의 팩토리 CLI를 실행하고, 에이전트가 만든 작업 트리의 코드는 실행하지 않는다.
-
-## 프리뷰 보안 한계
-
-- 프리뷰 웹은 프로덕션 웹과 같은 오리진(`https://roboco.io`)에서 서빙된다. 같은 오리진의 JavaScript는 `localStorage`를 읽을 수 있으므로, PR 코드가 다른 경로의 로그인 토큰을 읽을 수 있다.
-- 완화책으로 토큰 키를 API 주소별(`jwt:<API_BASE>`)로 나누고, 프리뷰 Worker마다 PR 번호에서 파생한 별도 `JWT_SECRET`을 쓴다. 프로덕션 토큰은 프리뷰 API에서 검증되지 않는다. 그러나 프리뷰 JS가 프로덕션 토큰을 읽는 것 자체는 막지 못한다.
-- 데모 범위에서 수용한 위험이다. 같은 리포 브랜치 PR만 프리뷰를 만들기 때문이다.
-
-## 소프트웨어 팩토리
+## 운영자 안내: 팩토리 설정과 실행
 
 - 이슈를 열면 트리아지 코멘트가 달린다. 리포 쓰기 권한자가 `@factory go`를 남기면 구현 → 교차 리뷰 → 체크 → 병합 → 배포가 진행된다. `@factory stop`은 진행 중인 run을 취소하고 사람에게 넘긴다.
 - 자동 병합은 위험 등급 T0·T1만 한다. T2·T3 PR은 CODEOWNERS 승인 후 사람이 병합한다.
@@ -33,7 +105,7 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
 - GitHub API가 일시적인 5xx 오류를 내면 단계가 재시도 없이 실패할 수 있다. 실패한 run을 `gh run rerun <run-id> --failed`로 다시 실행한다.
 - 리뷰가 멈췄거나 리뷰 run이 취소되어 PR이 `factory:in-review`에 남으면 `gh workflow run factory-review.yml -f pr=<n> -f issue=<n>`으로 리뷰를 다시 시작한다(`<n>`은 각각 PR 번호와 이슈 번호).
 
-## 유입과 증거(P3)
+## 운영자 안내: 오류·피드백 수집과 수정 증거
 
 - `evidence` 필수 체크: PR 본문의 팩토리 표식이 가리키는 이슈에 `type:bug` 라벨이 있으면, PR이 추가·수정한 테스트 파일만 base 커밋 트리에 덮어써 실행해 실패하고, head 트리에서 같은 테스트가 통과해야 한다. 그 밖의 PR은 즉시 통과한다. 실행 대상은 Vitest 파일(`*.test.ts`, `*.test.tsx`)이고, Playwright E2E(`apps/web/e2e/`)는 실행하지 않는다. 판정 코드는 base 커밋의 팩토리 CLI이며, PR 코드는 시크릿과 GitHub 토큰이 없는 `evidence` job에서만 실행된다.
 - 에러 유입: Worker가 처리하지 못한 예외는 `error_events` 테이블에 fingerprint(정규화한 메시지와 스택 상위 3프레임의 해시) 단위로 모인다. `factory-intake` 워크플로(매시 7분·37분)가 미확인 항목을 읽어 `source:error`·`type:bug` 이슈를 만들거나, 같은 fingerprint의 열린 이슈에 누적 횟수를 코멘트한다.
@@ -47,7 +119,7 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
   `curl -sS -o /dev/null -w '%{http_code}\n' -X POST -H @<(printf 'Authorization: Bearer %s\n' "$(cat ~/.config/sfd-intake-token)") https://sfd-api.roboco.workers.dev/api/_factory/intake/probe`
   예약 수집(매시 7분·37분)을 기다리지 않으려면 probe 직후 `gh workflow run factory-intake.yml`을 실행한다. 같은 probe를 다시 보내고 수집하면 열린 이슈에 "누적 2회" 코멘트가 달린다.
 
-## 주간 실행과 자기개선(P4)
+## 운영자 안내: 주간 실행과 자가 개선
 
 `factory-weekly` 워크플로는 매주 월요일 00:00 UTC에 실행된다. 수동으로 실행하려면 `gh workflow run factory-weekly.yml`을 쓴다. 먼저 `report` job이 지난 주의 주간 리포트 이슈를 만든다. 이 이슈에는 런 기록에서 계산한 지표(완주율, 엔진별 성공률과 비용), 실패 범주별 횟수, 표본 수가 기준에 못 미칠 때의 표시, 이전에 병합된 개선 규칙의 적용 전후 비교가 들어간다. 개선 이력은 `factory-data` 브랜치의 `improvements.json`에 쌓인다.
 
@@ -142,6 +214,18 @@ Workflows 권한은 주지 않는다. 이 권한이 없으면 App 토큰으로�
 - `factory-eval-live`의 agent job은 구현 엔진과 리뷰 엔진의 키를 함께 환경변수로 받는다. 이 워크플로는 수동으로만 실행한다.
 - 보드는 제목 "Software Factory"로 찾는다. org에 같은 제목의 보드가 생기면 동기화가 멈추고 경고만 남는다.
 - 런 기록에 리뷰 지적 원문(최대 300자)이 저장된다. 같은 문장이 퍼블릭 PR 리뷰에 이미 있다.
+
+## 보안
+
+- CI의 Cloudflare 토큰(`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`)은 워크플로 전체가 아니라 wrangler 또는 Cloudflare API를 호출하는 단계에만 `env`로 전달한다. 의존성 설치, 웹 빌드, Playwright 단계는 이 토큰을 받지 않는다.
+- Cloudflare 토큰은 `production`·`preview` environment 시크릿으로만 둔다. 팩토리 워크플로(`factory-*.yml`)는 Cloudflare 토큰을 받지 않는다. 봇 PR이 T2·T3 경로를 바꾸면 `preview.yml`의 `policy` job이 프리뷰 배포를 생략한다.
+- 팩토리의 에이전트는 GitHub 토큰이 없는 별도 job(VM)에서 실행되고, prepare job이 배정한 엔진의 API 키 하나만 받는다. push·PR·라벨은 에이전트가 실행된 적 없는 publish job이 새로 발급한 App 토큰으로 한다. publish job은 main을 체크아웃한 별도 디렉토리의 팩토리 CLI를 실행하고, 에이전트가 만든 작업 트리의 코드는 실행하지 않는다.
+
+## 프리뷰 보안 한계
+
+- 프리뷰 웹은 프로덕션 웹과 같은 오리진(`https://roboco.io`)에서 서빙된다. 같은 오리진의 JavaScript는 `localStorage`를 읽을 수 있으므로, PR 코드가 다른 경로의 로그인 토큰을 읽을 수 있다.
+- 완화책으로 토큰 키를 API 주소별(`jwt:<API_BASE>`)로 나누고, 프리뷰 Worker마다 PR 번호에서 파생한 별도 `JWT_SECRET`을 쓴다. 프로덕션 토큰은 프리뷰 API에서 검증되지 않는다. 그러나 프리뷰 JS가 프로덕션 토큰을 읽는 것 자체는 막지 못한다.
+- 데모 범위에서 수용한 위험이다. 같은 리포 브랜치 PR만 프리뷰를 만들기 때문이다.
 
 ## 라이선스
 
