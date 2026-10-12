@@ -2,13 +2,13 @@ import picomatch from "picomatch";
 import { z } from "zod";
 import { runStructured, type TimedResult } from "../agents/budget";
 import { loadPrompt, renderPrompt } from "../agents/prompt";
-import type { Budget } from "../agents/types";
+import type { Budget, FailureReason } from "../agents/types";
 import { resolveModel, toBudget } from "../config/agents";
 import { formatCheckFailures } from "../exec/checks";
 import { addedCaseSlugs, IMPROVE_PATHS, isImprovePath } from "../policy/improve-paths";
 import { commitMessage } from "../report/commit";
 import { replaceMeta } from "../report/pr";
-import { codeBlock, codeCell, demote, inline, writeMarker } from "../report/text";
+import { codeBlock, codeCell, demote, inline, neutralizeRefs, writeMarker } from "../report/text";
 import { IMPROVE_MARKER, type Candidate } from "./collect";
 import {
   TimedResultSchema,
@@ -22,6 +22,7 @@ import {
   record,
   runLink,
 } from "./common";
+import type { RunRecord } from "../runs/store";
 import type { StageDeps } from "./deps";
 import type { PhasedStage } from "./phased";
 import { clampResult, fileList, importAndVerify } from "./protect";
@@ -53,7 +54,7 @@ export interface ImprovePlan {
 }
 
 export type ImproveOutcome =
-  | { kind: "agent-failed"; result: TimedResult; reason: string }
+  | { kind: "agent-failed"; result: TimedResult; reason: FailureReason }
   | { kind: "forbidden-paths"; result: TimedResult; files: string[] }
   | { kind: "no-eval-case"; result: TimedResult }
   | { kind: "checks-failed"; result: TimedResult; output: string }
@@ -201,6 +202,60 @@ async function fail(deps: StageDeps, plan: ImprovePlan, reason: string): Promise
   );
 }
 
+async function publishCommitted(
+  deps: StageDeps,
+  plan: ImprovePlan,
+  out: Extract<ImproveOutcome, { kind: "committed" }>,
+  run: Omit<RunRecord, "ts">,
+): Promise<void> {
+  const token = deps.settings.token;
+  if (!token) throw new Error("improve publish requires FACTORY_TOKEN");
+
+  // 결과 파일은 에이전트가 고칠 수 있었다. 번들(저장소 상태)에서 변경 파일을 다시 구하고 허용 경로만 받는다.
+  const check = await importAndVerify(deps, {
+    branch: plan.branch,
+    baseSha: plan.baseSha,
+    sha: out.sha,
+    allowed: isImprovePath,
+  });
+  if (!check.ok) {
+    RECORDED.add(plan);
+    await record(deps, { ...run, ok: false, failureReason: "bundle_rejected" });
+    await fail(deps, plan, check.reason);
+    return;
+  }
+  // 에이전트가 만든 커밋은 믿지 않는다. 검증을 통과한 변경을 신뢰하는 메시지·봇 신원으로 다시 커밋한다.
+  await deps.git.resetSoft(plan.baseSha);
+  await deps.git.commitAll(
+    commitMessage(
+      out.title,
+      neutralizeRefs(out.summary),
+      { engine: plan.engine, model: plan.model },
+      plan.issue,
+    ),
+  );
+  await deps.git.push(plan.branch, token);
+  const removed = removedEslintLines(await deps.git.diffAgainst(plan.baseSha));
+  const pr = await deps.gh.createPull({
+    title: inline(out.title),
+    body: renderImproveBody({
+      plan,
+      title: out.title,
+      summary: out.summary,
+      files: check.verified.files,
+      removedEslintLines: removed,
+      runUrl: deps.settings.runUrl,
+    }),
+    head: plan.branch,
+    base: "main",
+    draft: false,
+  });
+  await deps.gh.addLabels(pr, IMPROVE_LABELS);
+  RECORDED.add(plan);
+  await record(deps, run);
+  await deps.gh.comment(plan.issue, `개선 PR #${pr}을 열었다. 사람 승인 후 병합된다.`);
+}
+
 export const improveStage: PhasedStage<ImproveArgs, ImprovePlan, ImproveOutcome> = {
   name: "improve",
   async prepare(deps, args) {
@@ -313,13 +368,16 @@ export const improveStage: PhasedStage<ImproveArgs, ImprovePlan, ImproveOutcome>
       out.result,
       plan.budget,
       ok,
-      out.kind === "agent-failed" ? FailureReasonSchema.parse(out.reason) : undefined,
+      out.kind === "agent-failed" ? out.reason : undefined,
     );
     const run = agentRecord("improve", plan.engine, plan.model, reported, plan.issue, null, 0);
     if (out.kind !== "committed" && out.kind !== "agent-failed")
       run.failureReason = FAILURE_REASON[out.kind];
-    RECORDED.add(plan);
-    await record(deps, run);
+    // committed는 번들 검증과 PR 생성이 끝난 뒤에 실제 결과로 기록한다. 나머지는 지금 기록한다.
+    if (out.kind !== "committed") {
+      RECORDED.add(plan);
+      await record(deps, run);
+    }
 
     if (out.kind === "agent-failed") {
       await fail(deps, plan, `개선 에이전트가 실패했다(사유: ${failureText(out.reason)}).`);
@@ -333,43 +391,16 @@ export const improveStage: PhasedStage<ImproveArgs, ImprovePlan, ImproveOutcome>
       await fail(deps, plan, `${FAILURE_MESSAGE[out.kind]}.`);
       return;
     }
-    const token = deps.settings.token;
-    if (!token) throw new Error("improve publish requires FACTORY_TOKEN");
-
-    // 결과 파일은 에이전트가 고칠 수 있었다. 번들(저장소 상태)에서 변경 파일을 다시 구하고 허용 경로만 받는다.
-    const check = await importAndVerify(deps, {
-      branch: plan.branch,
-      baseSha: plan.baseSha,
-      sha: out.sha,
-      allowed: isImprovePath,
-    });
-    if (!check.ok) {
-      await fail(deps, plan, check.reason);
-      return;
+    try {
+      await publishCommitted(deps, plan, out, run);
+    } catch (err) {
+      // 검증 뒤 push·PR 생성이 실패하면 성공으로 기록하지 않고 실패 런을 한 번만 남긴다.
+      if (!RECORDED.has(plan)) {
+        RECORDED.add(plan);
+        await record(deps, { ...run, ok: false, failureReason: "publish_failed" });
+      }
+      throw err;
     }
-    // 에이전트가 만든 커밋은 믿지 않는다. 검증을 통과한 변경을 신뢰하는 메시지·봇 신원으로 다시 커밋한다.
-    await deps.git.resetSoft(plan.baseSha);
-    await deps.git.commitAll(
-      commitMessage(out.title, out.summary, { engine: plan.engine, model: plan.model }, plan.issue),
-    );
-    await deps.git.push(plan.branch, token);
-    const removed = removedEslintLines(await deps.git.diffAgainst(plan.baseSha));
-    const pr = await deps.gh.createPull({
-      title: inline(out.title),
-      body: renderImproveBody({
-        plan,
-        title: out.title,
-        summary: out.summary,
-        files: check.verified.files,
-        removedEslintLines: removed,
-        runUrl: deps.settings.runUrl,
-      }),
-      head: plan.branch,
-      base: "main",
-      draft: false,
-    });
-    await deps.gh.addLabels(pr, IMPROVE_LABELS);
-    await deps.gh.comment(plan.issue, `개선 PR #${pr}을 열었다. 사람 승인 후 병합된다.`);
   },
 
   async crashed(deps, plan) {

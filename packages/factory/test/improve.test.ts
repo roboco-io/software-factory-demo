@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFakeAdapter, type FakeStep } from "../src/agents/fake";
 import { addedCaseSlugs, isImprovePath } from "../src/policy/improve-paths";
@@ -295,6 +298,99 @@ describe("improve stage", () => {
     const after = await h.gh.getIssue(n);
     expect(after.state).toBe("open");
     expect(after.labels).toEqual(["factory:report"]);
+  });
+});
+
+describe("improve publish phase", () => {
+  async function phases(h: TestHarness, n: number) {
+    const dir = mkdtempSync(path.join(tmpdir(), "improve-"));
+    const files = { plan: path.join(dir, "plan.json"), outcome: path.join(dir, "outcome.json") };
+    await runPhase(improveStage, "prepare", h.deps, { issue: n }, files);
+    await runPhase(improveStage, "agent", h.deps, { issue: n }, files);
+    return files;
+  }
+  const publish = (h: TestHarness, n: number, f: { plan: string; outcome: string }) =>
+    runPhase(improveStage, "publish", h.deps, { issue: n }, f);
+
+  async function setup(extra?: Record<string, string>) {
+    const h = makeTestDeps({ adapters: { claude: createFakeAdapter([GOOD], "claude") } });
+    const n = reportIssue(h);
+    const files = await phases(h, n);
+    if (extra) {
+      for (const [f, c] of Object.entries(extra)) {
+        mkdirSync(path.join(h.dir, path.dirname(f)), { recursive: true });
+        writeFileSync(path.join(h.dir, f), c);
+      }
+      const sha = await h.git.commitAll("tamper");
+      const o = JSON.parse(readFileSync(files.outcome, "utf8")) as {
+        outcome: Record<string, unknown>;
+      };
+      writeFileSync(files.outcome, JSON.stringify({ outcome: { ...o.outcome, sha } }));
+    }
+    return { h, n, files };
+  }
+
+  const expectRejected = async (h: TestHarness, n: number) => {
+    expect(h.git.pushes).toEqual([]);
+    expect(h.gh.pulls.size).toBe(0);
+    expect((await comments(h, n))[0]).toContain("재검증에서 변경이 거부되었다");
+    const recs = await h.deps.runs.since(new Date(0));
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ role: "improve", ok: false, failureReason: "bundle_rejected" });
+  };
+
+  it("rejects a bundle that contains a file outside the allowed paths", async () => {
+    const { h, n, files } = await setup({ "apps/api/src/x.ts": "x\n" });
+    await publish(h, n, files);
+    await expectRejected(h, n);
+    expect((await comments(h, n))[0]).toContain("apps/api/src/x.ts");
+  });
+
+  it("rejects a bundle that changes no files", async () => {
+    const { h, n, files } = await setup();
+    h.git.filesAgainst = async () => [];
+    await publish(h, n, files);
+    await expectRejected(h, n);
+    expect((await comments(h, n))[0]).toContain("변경 파일 수: 0");
+  });
+
+  it("records one failed run when publish throws after verification", async () => {
+    const { h, n, files } = await setup();
+    h.gh.createPull = async () => {
+      throw new Error("boom");
+    };
+    await expect(publish(h, n, files)).rejects.toThrow("boom");
+    const recs = await h.deps.runs.since(new Date(0));
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ role: "improve", ok: false, failureReason: "publish_failed" });
+  });
+
+  it("neutralizes mentions and close keywords in the commit body", async () => {
+    const h = makeTestDeps({
+      adapters: {
+        claude: createFakeAdapter(
+          [
+            {
+              ...GOOD,
+              result: {
+                ...GOOD.result,
+                summary: JSON.stringify({
+                  title: "오류 응답 헬퍼 강제 lint 규칙",
+                  summary: "요약입니다 @serithemage fixes #1 반복 실수 방지",
+                  rule: "lint",
+                }),
+              },
+            },
+          ],
+          "claude",
+        ),
+      },
+    });
+    const n = reportIssue(h);
+    await run(h, n);
+    const msg = h.git.messages.at(-1) ?? "";
+    expect(msg).not.toMatch(/@serithemage/);
+    expect(msg).not.toMatch(/fixes #1/);
   });
 });
 
