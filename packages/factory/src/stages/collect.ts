@@ -127,18 +127,31 @@ export function rankCandidates(
 export async function runCollect(deps: StageDeps): Promise<CollectResult> {
   const to = deps.now();
   const from = new Date(to.getTime() - COLLECT.windowDays * 24 * 60 * 60 * 1000);
-  const [runs, commits, pulls] = await Promise.all([
+  const [runs, commits, pulls, merged] = await Promise.all([
     deps.runs.since(from),
     deps.gh.listCommits(from),
     deps.gh.listOpenPulls(),
+    deps.gh.listMergedPulls(from),
   ]);
+  const improveKey = (p: { author: string; labels: string[]; body: string }): string | null => {
+    if (p.author !== deps.settings.botLogin || !p.labels.includes(IMPROVE_LABEL)) return null;
+    return readMarker(p.body, IMPROVE_MARKER, z.object({ key: z.string() }))?.key ?? null;
+  };
   const openKeys = new Set<string>();
   for (const p of pulls) {
-    if (p.author !== deps.settings.botLogin || !p.labels.includes(IMPROVE_LABEL)) continue;
-    const m = readMarker(p.body, IMPROVE_MARKER, z.object({ key: z.string() }));
-    if (m) openKeys.add(m.key);
+    const key = improveKey(p);
+    if (key) openKeys.add(key);
   }
-  const events = failureEvents(runs, commits);
+  // 병합된 개선 PR이 다룬 범주는 병합 전 이벤트를 세지 않는다. 개선 뒤에도 같은 실패가
+  // 서로 다른 이슈 3건에서 다시 나와야 후보가 된다(같은 근거로 개선 PR을 반복하지 않는다).
+  const improvedAt = new Map<string, number>();
+  for (const p of merged) {
+    const key = improveKey(p);
+    if (key) improvedAt.set(key, Math.max(improvedAt.get(key) ?? 0, Date.parse(p.mergedAt)));
+  }
+  const events = failureEvents(runs, commits).filter(
+    (e) => Date.parse(e.ts) > (improvedAt.get(e.key) ?? Number.NEGATIVE_INFINITY),
+  );
   return {
     from: from.toISOString(),
     to: to.toISOString(),
