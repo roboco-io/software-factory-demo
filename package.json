@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "pnpm -r --if-present typecheck",
-    "lint": "eslint . && prettier --check .",
+    "lint": "eslint . && prettier --check . && node scripts/check-markdown.mjs",
     "format": "prettier --write .",
     "test": "pnpm -r --if-present test && node --test \"scripts/*.test.mjs\"",
     "factory": "tsx packages/factory/src/cli.ts"
@@ -19,6 +19,8 @@
     "eslint": "^10.12.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",
+    "micromark": "^4.0.3",
+    "micromark-extension-gfm": "^3.0.0",
     "prettier": "^3.9.10",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3",
