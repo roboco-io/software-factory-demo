@@ -50,9 +50,9 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
 
 `factory-weekly` 워크플로는 매주 월요일 00:00 UTC에 실행된다. 수동으로 실행하려면 `gh workflow run factory-weekly.yml`을 쓴다. 먼저 `report` job이 지난 주의 주간 리포트 이슈를 만든다. 이 이슈에는 런 기록에서 계산한 지표(완주율, 엔진별 성공률과 비용), 실패 범주별 횟수, 표본 수가 기준에 못 미칠 때의 표시, 이전에 병합된 개선 규칙의 적용 전후 비교가 들어간다. 개선 이력은 `factory-data` 브랜치의 `improvements.json`에 쌓인다.
 
-같은 범주의 실패가 서로 다른 이슈 3건 이상에서 반복되면 그 범주가 개선 후보가 되고, `prepare`·`agent`·`publish` job이 차례로 돈다. 후보가 없으면 이 세 job은 `skipped`로 끝난다. improve 에이전트는 `AGENTS.md`, `factory/prompts/**`, `eslint.config.*`, `factory/evals/**`만 고칠 수 있으며, 고친 결과는 `factory:improve` 라벨이 붙은 PR로 열린다. 이 PR은 `factory/`와 `AGENTS.md`를 바꾸므로 T3이고, 사람(CODEOWNERS)이 승인하기 전에는 병합되지 않는다.
+같은 범주의 실패가 서로 다른 이슈 3건 이상에서 반복되면 그 범주가 개선 후보가 되고, `prepare`·`agent`·`publish` job이 차례로 돈다. 후보가 없으면 이 세 job은 `skipped`로 끝난다. improve 에이전트는 `AGENTS.md`, `factory/prompts/**`, `eslint.config.*`, `factory/evals/**`만 고칠 수 있으며, 고친 결과는 PR로 열리고 `factory:improve` 라벨이 붙는다. `eval` 체크는 이 라벨이 아니라 PR 본문 메타와 작성자로 개선 PR을 판별한다. 이 PR은 `factory/`와 `AGENTS.md`를 바꾸므로 T3이고, 사람(CODEOWNERS)이 승인하기 전에는 병합되지 않는다.
 
-`eval` 필수 체크는 모든 PR에서 돈다. 모든 PR에서 head 트리의 평가 케이스(`factory/evals/**`)가 모두 계속 잡혀야 하며, 이는 이전에 막은 실패가 다시 살아나지 않게 하는 회귀 방지 검사다. 봇이 연 개선 PR(`factory:improve` 라벨)은 여기에 더해 새 평가 케이스를 1개 이상 추가해야 한다. 각 새 케이스는 base 규칙으로는 잡히지 않고 head 규칙으로는 잡혀야 하며, 그래야 이 PR이 실제로 규칙을 바꾼 것이 증명된다. 봇 PR은 기존 평가 케이스를 지우거나 내용을 바꿀 수 없다. 사람이 연 PR은 케이스를 지울 수 있다. 판정은 시크릿과 GitHub 토큰이 없는 job에서 하며, PR의 ESLint 설정은 별도 자식 프로세스에서 실행한다.
+`eval` 필수 체크는 모든 PR에서 돈다. 모든 PR에서 head 트리의 평가 케이스(`factory/evals/**`)가 모두 계속 잡혀야 하며, 이는 이전에 막은 실패가 다시 살아나지 않게 하는 회귀 방지 검사다. 봇이 연 개선 PR(PR 본문 메타의 `role=improve`이고 작성자가 봇인 PR)은 여기에 더해 새 평가 케이스를 1개 이상 추가해야 한다. 각 새 케이스는 base 규칙으로는 잡히지 않고 head 규칙으로는 잡혀야 하며, 그래야 이 PR이 실제로 규칙을 바꾼 것이 증명된다. 봇 PR은 기존 평가 케이스를 지우거나 내용을 바꿀 수 없다. 사람이 연 PR은 케이스를 지울 수 있다. 판정은 시크릿과 GitHub 토큰이 없는 job에서 하며, PR의 ESLint 설정은 별도 자식 프로세스에서 실행한다.
 
 ## 데모 리허설: 심은 버그
 

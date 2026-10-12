@@ -202,6 +202,30 @@ async function fail(deps: StageDeps, plan: ImprovePlan, reason: string): Promise
   );
 }
 
+// createPull은 라벨을 받지 못하므로 생성 뒤 붙인다. 실패하면 한 번 더 시도하고, 그래도 실패하면
+// 리포트 이슈에 라벨 누락을 알린 뒤 원래 예외를 다시 던진다(호출자가 publish_failed를 한 번 기록한다).
+async function labelPull(deps: StageDeps, plan: ImprovePlan, pr: number): Promise<void> {
+  try {
+    await deps.gh.addLabels(pr, IMPROVE_LABELS);
+    return;
+  } catch {
+    // 한 번 재시도한다.
+  }
+  try {
+    await deps.gh.addLabels(pr, IMPROVE_LABELS);
+  } catch (err) {
+    try {
+      await deps.gh.comment(
+        plan.issue,
+        `개선 PR #${pr}을 열었지만 라벨(${IMPROVE_LABELS.join(", ")})을 붙이지 못했다. 사람이 라벨을 붙여야 한다.${runLink(deps.settings)}`,
+      );
+    } catch {
+      // 알림 실패가 원래 오류를 가리지 않게 한다.
+    }
+    throw err;
+  }
+}
+
 async function publishCommitted(
   deps: StageDeps,
   plan: ImprovePlan,
@@ -250,7 +274,7 @@ async function publishCommitted(
     base: "main",
     draft: false,
   });
-  await deps.gh.addLabels(pr, IMPROVE_LABELS);
+  await labelPull(deps, plan, pr);
   RECORDED.add(plan);
   await record(deps, run);
   await deps.gh.comment(plan.issue, `개선 PR #${pr}을 열었다. 사람 승인 후 병합된다.`);
@@ -344,6 +368,12 @@ export const improveStage: PhasedStage<ImproveArgs, ImprovePlan, ImproveOutcome>
         output: formatCheckFailures(checks.results).slice(-MAX_OUTPUT),
       };
     }
+    // 검사가 파일을 만들거나 바꿨을 수 있다. 커밋될 최종 목록에 허용 경로와 새 케이스 조건을 다시 적용한다.
+    const finalFiles = await deps.git.filesAgainst(plan.baseSha);
+    const finalOutside = finalFiles.filter((f) => !isImprovePath(f));
+    if (finalOutside.length > 0)
+      return { kind: "forbidden-paths", result, files: finalOutside.slice(0, MAX_FILES) };
+    if (addedCaseSlugs(finalFiles).length === 0) return { kind: "no-eval-case", result };
     const sha = await deps.git.commitAll(value.title);
     // agent job과 publish job은 다른 VM이다. 커밋을 bundle 파일로 넘긴다.
     if (deps.settings.bundlePath) await deps.git.createBundle(deps.settings.bundlePath);
@@ -354,7 +384,7 @@ export const improveStage: PhasedStage<ImproveArgs, ImprovePlan, ImproveOutcome>
       title: value.title,
       summary: value.summary,
       rule: value.rule,
-      files: files.slice(0, MAX_FILES),
+      files: finalFiles.slice(0, MAX_FILES),
     };
   },
 

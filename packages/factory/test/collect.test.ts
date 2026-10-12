@@ -65,6 +65,18 @@ describe("collect", () => {
     expect(new Set(ev.map((e) => e.distinctKey)).size).toBe(1);
   });
 
+  it("skips improve records so improve failures are not candidates", () => {
+    const ev = failureEvents(
+      [
+        rec({ issue: 1, ok: false, role: "improve", failureReason: "checks_failed" }),
+        rec({ issue: 2, ok: false, role: "improve", failureReason: "checks_failed" }),
+        rec({ issue: 3, ok: false, role: "implement", failureReason: "timeout" }),
+      ],
+      [],
+    );
+    expect(ev.map((e) => e.key)).toEqual(["run:timeout"]);
+  });
+
   it("keys run failures by reason and distinct issue", () => {
     const ev = failureEvents(
       [rec({ issue: 4, ok: false, failureReason: "timeout" }), rec({ issue: 5, ok: false })],

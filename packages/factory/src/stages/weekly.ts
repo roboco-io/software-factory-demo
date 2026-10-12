@@ -27,7 +27,8 @@ const DAY_MS = 86_400_000;
 const PERIOD_DAYS = 7;
 const EFFECT_DAYS = 90;
 const BEFORE_DAYS = 28;
-const MAX_MARKER_CANDIDATES = 20;
+// 표식과 본문의 후보 수 상한. 이슈 본문 65,536자 제한을 넘지 않게 하며, prepare는 candidates[0]만 쓴다.
+const MAX_MARKER_CANDIDATES = 5;
 
 export interface WeeklyResult {
   issue: number;
@@ -110,6 +111,7 @@ export function renderWeeklyBody(input: WeeklyInput): string {
     input.candidates.length === 0
       ? "개선 후보 없음. 이번 주에는 improve를 실행하지 않는다."
       : input.candidates
+          .slice(0, MAX_MARKER_CANDIDATES)
           .map((c) =>
             [
               `### ${inline(c.key)}`,

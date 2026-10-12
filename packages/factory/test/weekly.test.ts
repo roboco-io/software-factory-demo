@@ -113,6 +113,22 @@ describe("weekly report", () => {
     expect(latestReportMarker(issue, [], BOT)?.candidates).toEqual([]);
   });
 
+  it("caps marker and visible candidates at 5", async () => {
+    const h = makeTestDeps();
+    for (let c = 0; c < 8; c++)
+      for (const issue of [1, 2, 3])
+        await h.deps.runs.append(
+          rec({
+            issue,
+            findings: [{ category: `cat${c}`, file: "a.ts", message: "m" }],
+          }),
+        );
+    const res = await runWeeklyReport(h.deps);
+    const issue = await h.gh.getIssue(res.issue);
+    expect(latestReportMarker(issue, [], BOT)?.candidates).toHaveLength(5);
+    expect(issue.body.match(/^### review:/gm)).toHaveLength(5);
+  });
+
   it("neutralizes mentions and closing keywords from failure samples", async () => {
     const h = makeTestDeps();
     await seedFindings(h, "ping @serithemage, fixes #1");

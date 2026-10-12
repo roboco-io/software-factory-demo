@@ -225,6 +225,44 @@ describe("improve stage", () => {
     });
   });
 
+  it("lists files after checks, so check-generated allowed files are reported", async () => {
+    const claude = createFakeAdapter([GOOD], "claude");
+    let dir = "";
+    const h = makeTestDeps({
+      adapters: { claude },
+      spawn: async (_cmd, args) => {
+        if (args[0] === "lint")
+          writeFileSync(path.join(dir, "factory/evals/error-format/generated.txt"), "g\n");
+        return { code: 0, stdout: "ok", stderr: "" };
+      },
+    });
+    dir = h.dir;
+    const n = reportIssue(h);
+    await run(h, n);
+    const [pr] = [...h.gh.pulls.values()];
+    expect(pr!.body).toContain("factory/evals/error-format/generated.txt");
+  });
+
+  it("discards the result when checks generate a file outside the allowed paths", async () => {
+    const claude = createFakeAdapter([GOOD], "claude");
+    let dir = "";
+    const h = makeTestDeps({
+      adapters: { claude },
+      spawn: async (_cmd, args) => {
+        if (args[0] === "lint") writeFileSync(path.join(dir, "stray.txt"), "g\n");
+        return { code: 0, stdout: "ok", stderr: "" };
+      },
+    });
+    dir = h.dir;
+    const n = reportIssue(h);
+    await run(h, n);
+    expect(h.gh.pulls.size).toBe(0);
+    expect((await comments(h, n))[0]).toContain("stray.txt");
+    expect((await h.deps.runs.since(new Date(0)))[0]).toMatchObject({
+      failureReason: "forbidden_paths",
+    });
+  });
+
   it("records the agent failure reason when the output is invalid", async () => {
     const bad: FakeStep = { result: { summary: "not json" } };
     const claude = createFakeAdapter([bad, bad], "claude");
@@ -352,6 +390,38 @@ describe("improve publish phase", () => {
     await publish(h, n, files);
     await expectRejected(h, n);
     expect((await comments(h, n))[0]).toContain("변경 파일 수: 0");
+  });
+
+  it("retries addLabels once and succeeds without a failed run", async () => {
+    const { h, n, files } = await setup();
+    const orig = h.gh.addLabels.bind(h.gh);
+    let calls = 0;
+    h.gh.addLabels = async (pr, labels) => {
+      if (++calls === 1) throw new Error("flaky");
+      return orig(pr, labels);
+    };
+    await publish(h, n, files);
+    expect(calls).toBe(2);
+    expect([...h.gh.pulls.values()][0]!.labels).toContain("factory:improve");
+    const recs = await h.deps.runs.since(new Date(0));
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ ok: true });
+  });
+
+  it("comments on the report and records publish_failed once when labeling keeps failing", async () => {
+    const { h, n, files } = await setup();
+    let calls = 0;
+    h.gh.addLabels = async () => {
+      calls++;
+      throw new Error("no label");
+    };
+    await expect(publish(h, n, files)).rejects.toThrow("no label");
+    expect(calls).toBe(2);
+    const [pr] = [...h.gh.pulls.keys()];
+    expect((await comments(h, n)).join("\n")).toContain(`PR #${pr}`);
+    const recs = await h.deps.runs.since(new Date(0));
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ ok: false, failureReason: "publish_failed" });
   });
 
   it("records one failed run when publish throws after verification", async () => {

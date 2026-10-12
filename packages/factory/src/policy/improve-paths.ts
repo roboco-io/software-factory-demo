@@ -17,6 +17,8 @@ export function isImprovePath(file: string): boolean {
 }
 
 // 변경 파일 가운데 평가 케이스 정의(factory/evals/<slug>/case.yml)의 slug.
+// 새로 추가한 case.yml뿐 아니라 기존 case.yml을 수정한 경로도 포함한다. 봇이 기존 케이스를 수정하는 것은
+// CI의 eval 체크가 거부하므로 여기서는 구분하지 않는다.
 export function addedCaseSlugs(files: string[]): string[] {
   const slugs: string[] = [];
   for (const f of files) {
