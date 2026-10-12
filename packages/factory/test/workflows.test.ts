@@ -45,8 +45,9 @@ const AGENT_WORKFLOWS = [
   "factory-implement.yml",
   "factory-review.yml",
   "factory-fix.yml",
+  "factory-weekly.yml",
 ];
-const PHASED = /pnpm -s factory (triage|implement|review|fix)\b/;
+const PHASED = /pnpm -s factory (triage|implement|review|fix|improve)\b/;
 const text = (step: Step) => JSON.stringify(step);
 const steps = (wf: Workflow) => Object.values(wf.jobs).flatMap((j) => j.steps);
 const checkouts = (job: Job) => job.steps.filter((s) => s.uses?.startsWith("actions/checkout@"));
@@ -70,6 +71,7 @@ describe("factory workflows", () => {
       "factory-review.yml",
       "factory-smoke.yml",
       "factory-triage.yml",
+      "factory-weekly.yml",
     ]);
   });
 
@@ -104,7 +106,10 @@ describe("factory workflows", () => {
   it("split agent workflows into prepare, agent and publish jobs, with no GitHub token in the agent job", () => {
     for (const file of AGENT_WORKFLOWS) {
       const wf = load(file);
-      expect(Object.keys(wf.jobs), file).toEqual(["prepare", "agent", "publish"]);
+      const weekly = file === "factory-weekly.yml";
+      expect(Object.keys(wf.jobs), file).toEqual(
+        weekly ? ["report", "prepare", "agent", "publish"] : ["prepare", "agent", "publish"],
+      );
       const agent = wf.jobs.agent!;
       expect(
         agent.steps.some((s) => s.run?.includes("--phase agent")),
@@ -127,7 +132,8 @@ describe("factory workflows", () => {
           `${file} ${job} has engine keys`,
         ).toBe(false);
       }
-      expect(wf["run-name"], file).toMatch(/\[factory\/issue-\$\{\{/);
+      // 주간 실행은 이슈 번호를 report job이 정하므로 run-name에 쓸 수 없다.
+      if (!weekly) expect(wf["run-name"], file).toMatch(/\[factory\/issue-\$\{\{/);
     }
   });
 
@@ -167,7 +173,7 @@ describe("factory workflows", () => {
         expect(plans.length, `${file} ${name} uploads factory-plan`).toBe(
           name === "prepare" ? 1 : 0,
         );
-        if (name === "prepare") continue;
+        if (name === "prepare" || (file === "factory-weekly.yml" && name === "report")) continue;
         const download = job.steps.find(
           (s) =>
             s.uses?.startsWith("actions/download-artifact@") &&
@@ -179,6 +185,15 @@ describe("factory workflows", () => {
         expect(download?.with?.name, `${file} ${name}`).toBeUndefined();
       }
     }
+  });
+
+  it("factory-weekly runs on Mondays and on demand, reports before improving", () => {
+    const wf = load("factory-weekly.yml");
+    expect(wf.on.schedule).toEqual([{ cron: "0 0 * * 1" }]);
+    expect(wf.on).toHaveProperty("workflow_dispatch");
+    expect(wf.jobs.prepare!.needs).toBe("report");
+    expect(wf.jobs.prepare!.if).toContain("needs.report.outputs.candidates != '0'");
+    expect(JSON.stringify(wf.jobs.agent)).not.toMatch(/FACTORY_TOKEN|GITHUB_TOKEN/);
   });
 
   it("check out agent and publish work trees with full history (T13-a)", () => {

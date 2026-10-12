@@ -49,6 +49,8 @@ const isIgnored = (reason: string | null): boolean =>
 export function failureEvents(runs: RunRecord[], commits: CommitInfo[]): FailureEvent[] {
   const out: FailureEvent[] = [];
   for (const r of runs) {
+    // improve 자신의 실패는 개선 후보나 run:<사유> 집계에 넣지 않는다.
+    if (r.role === "improve") continue;
     const base = { issue: r.issue, pr: r.pr, ts: r.ts };
     if (!r.ok && r.role === "smoke") {
       out.push({ ...base, key: "smoke", detail: null, distinctKey: r.ts.slice(0, 10) });

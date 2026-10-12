@@ -27,6 +27,18 @@ describe("cli main", () => {
     expect(JSON.parse(out.at(-1)!)).toMatchObject({ events: 0, candidates: [], excluded: [] });
   });
 
+  it("weekly-report prints a WeeklyResult as JSON", async () => {
+    const h = makeTestDeps();
+    const out: string[] = [];
+    expect(await main(["weekly-report"], context(h, [], out))).toBe(0);
+    expect(JSON.parse(out.at(-1)!)).toEqual({
+      issue: 1,
+      created: true,
+      week: "2026-W42",
+      candidates: 0,
+    });
+  });
+
   it("smoke-report maps non-success results to failure and requires a result", async () => {
     const h = makeTestDeps();
     const out: string[] = [];
@@ -168,6 +180,22 @@ describe("cli main", () => {
     ).toBe(0);
     expect(phases).toEqual(["all"]);
     expect((await h.gh.getIssue(issue.number)).labels).toContain("factory:triaged");
+  });
+
+  it("runs improve in the requested phase and requires --issue", async () => {
+    const h = makeTestDeps();
+    const issue = h.gh.addIssue({ title: "사람 이슈" });
+    const phases: Phase[] = [];
+    const out: string[] = [];
+    expect(
+      await main(
+        ["improve", "--issue", String(issue.number), "--phase", "all"],
+        context(h, phases),
+      ),
+    ).toBe(0);
+    expect(phases).toEqual(["all"]);
+    expect(h.logs).toContain(`improve: #${issue.number} is not an open factory report; skipping`);
+    expect(await main(["improve", "--phase", "all"], context(h, [], out))).toBe(2);
   });
 
   it("requires an explicit --phase", async () => {

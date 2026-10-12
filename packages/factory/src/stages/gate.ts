@@ -67,6 +67,10 @@ export async function runGate(deps: StageDeps, args: GateArgs): Promise<GateDeci
   }
   const meta = parsePrMeta(pull.body);
   if (!meta) return "ignored";
+  if (meta.role === "improve") {
+    deps.log(`gate: 개선 PR #${pull.number}은 사람이 병합한다`);
+    return "ignored";
+  }
   const { state } = await readState(deps.gh, meta.issue);
   if (state !== "in-review") return "ignored";
 
@@ -194,8 +198,16 @@ export async function runOnClosed(deps: StageDeps, { pr }: { pr: number }): Prom
   if (pull.author !== deps.settings.botLogin) return false;
   const meta = parsePrMeta(pull.body);
   if (!meta) return false;
+  if (!pull.merged && pull.state !== "closed") return false;
+  if (meta.role === "improve") {
+    // 개선 PR의 meta.issue는 주간 리포트 이슈다. 상태 라벨을 바꾸지 않고 결과만 알린다.
+    await deps.gh.comment(
+      meta.issue,
+      pull.merged ? `개선 PR #${pr}이 병합되었다.` : `개선 PR #${pr}이 병합 없이 닫혔다.`,
+    );
+    return false;
+  }
   if (!pull.merged) {
-    if (pull.state !== "closed") return false;
     // 병합 없이 닫힌 봇 PR은 이슈가 in-review에 남지 않도록 사람에게 넘긴다.
     await moveTo(
       deps,

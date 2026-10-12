@@ -17,6 +17,7 @@ import { fixStage } from "./stages/fix";
 import { runGate, runOnClosed } from "./stages/gate";
 import { runGuard } from "./stages/guard";
 import { implementStage } from "./stages/implement";
+import { improveStage } from "./stages/improve";
 import type { StageDeps } from "./stages/deps";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
 import { runCollect } from "./stages/collect";
@@ -25,6 +26,7 @@ import { createIntakeClient, runIntake } from "./stages/intake";
 import { normalizeSmokeResult, runSmokeReport } from "./stages/smoke";
 import { runRisk } from "./stages/risk";
 import { triageStage } from "./stages/triage";
+import { runWeeklyReport } from "./stages/weekly";
 
 export interface CliContext {
   env: NodeJS.ProcessEnv;
@@ -139,6 +141,7 @@ export const COMMANDS: Record<string, Handler> = {
       sender ? { issue: num(v, "issue"), sender } : { issue: num(v, "issue") },
     );
   },
+  improve: (ctx, v) => phased(ctx, v, improveStage, { issue: num(v, "issue") }),
   gate: async (ctx, v) => {
     const pr = optNum(v, "pr");
     const branch = str(v, "branch");
@@ -179,6 +182,10 @@ export const COMMANDS: Record<string, Handler> = {
   },
   collect: async (ctx) => {
     ctx.stdout(JSON.stringify(await runCollect(ctx.buildDeps(ctx.env, "all"))));
+    return 0;
+  },
+  "weekly-report": async (ctx) => {
+    ctx.stdout(JSON.stringify(await runWeeklyReport(ctx.buildDeps(ctx.env, "all"))));
     return 0;
   },
   guard: async (ctx) => {

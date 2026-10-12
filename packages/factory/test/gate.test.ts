@@ -232,6 +232,16 @@ describe("runGate", () => {
     expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:needs-human"]);
   });
 
+  it("leaves improvement PRs to a human even when every check passes", async () => {
+    const h = makeTestDeps();
+    const { pr } = await openBotPr(h, { role: "improve" });
+    h.gh.setChecks("sha-a", GREEN);
+    await verdict(h, pr, "sha-a", "APPROVE");
+    expect(await runGate(h.deps, { pr })).toBe("ignored");
+    expect(h.gh.merges).toEqual([]);
+    expect(h.logs).toContain(`gate: 개선 PR #${pr}은 사람이 병합한다`);
+  });
+
   it("ignores PRs whose issue is not in review", async () => {
     const h = makeTestDeps();
     const { pr, issue } = await openBotPr(h);
@@ -260,5 +270,26 @@ describe("runOnClosed", () => {
     expect(await runOnClosed(h.deps, { pr })).toBe(false);
     expect((await h.gh.getIssue(issue)).labels).toEqual(["factory:needs-human"]);
     expect((await h.gh.listComments(issue))[0]?.body).toContain("병합 없이");
+  });
+
+  it("comments on the report issue without changing labels when an improvement PR closes", async () => {
+    const h = makeTestDeps();
+    const merged = await openBotPr(h, { role: "improve" });
+    await h.gh.removeLabel(merged.issue, "factory:in-review");
+    await h.gh.addLabels(merged.issue, ["factory:report"]);
+    h.gh.humanMerge(merged.pr, "m");
+    expect(await runOnClosed(h.deps, { pr: merged.pr })).toBe(false);
+    expect((await h.gh.getIssue(merged.issue)).labels).toEqual(["factory:report"]);
+    expect((await h.gh.listComments(merged.issue)).map((c) => c.body)).toEqual([
+      `개선 PR #${merged.pr}이 병합되었다.`,
+    ]);
+
+    const closed = await openBotPr(h, { role: "improve" });
+    h.gh.pulls.get(closed.pr)!.state = "closed";
+    expect(await runOnClosed(h.deps, { pr: closed.pr })).toBe(false);
+    expect((await h.gh.getIssue(closed.issue)).labels).toEqual(["factory:in-review"]);
+    expect((await h.gh.listComments(closed.issue)).map((c) => c.body)).toEqual([
+      `개선 PR #${closed.pr}이 병합 없이 닫혔다.`,
+    ]);
   });
 });
