@@ -8,6 +8,7 @@ import { ApiError } from "../lib/errors";
 export const tagsRouter = new Hono<AppEnv>();
 
 tagsRouter.get("/tags", async (c) => {
+  if (c.req.query("prefix") === "") return c.json({ errors: { prefix: ["must not be empty"] } }, 422);
   const raw = c.req.query("limit");
   let limit: number | undefined;
   if (raw !== undefined) {
