@@ -18,6 +18,7 @@ import { runGuard } from "./stages/guard";
 import { implementStage } from "./stages/implement";
 import type { StageDeps } from "./stages/deps";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
+import { runCollect } from "./stages/collect";
 import { reviewStage } from "./stages/review";
 import { createIntakeClient, runIntake } from "./stages/intake";
 import { normalizeSmokeResult, runSmokeReport } from "./stages/smoke";
@@ -173,6 +174,10 @@ export const COMMANDS: Record<string, Handler> = {
   },
   bootstrap: async (ctx) => {
     ctx.stdout(JSON.stringify(await runBootstrap(ctx.buildDeps(ctx.env, "all"))));
+    return 0;
+  },
+  collect: async (ctx) => {
+    ctx.stdout(JSON.stringify(await runCollect(ctx.buildDeps(ctx.env, "all"))));
     return 0;
   },
   guard: async (ctx) => {

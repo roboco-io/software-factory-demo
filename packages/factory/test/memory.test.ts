@@ -101,3 +101,27 @@ describe("InMemoryGitHub history", () => {
     expect(await gh.listMergedPulls(new Date("2026-10-12"))).toEqual([]);
   });
 });
+
+describe("InMemoryGitHub listOpenPulls", () => {
+  it("returns only open pulls", async () => {
+    const gh = new InMemoryGitHub({ botLogin: BOT });
+    gh.setBranch("factory/issue-1", "sha1", ["a.ts"]);
+    gh.setBranch("factory/issue-2", "sha2", ["b.ts"]);
+    const a = await gh.createPull({
+      title: "a",
+      body: "",
+      head: "factory/issue-1",
+      base: "main",
+      draft: false,
+    });
+    const b = await gh.createPull({
+      title: "b",
+      body: "",
+      head: "factory/issue-2",
+      base: "main",
+      draft: false,
+    });
+    gh.pulls.get(b)!.state = "closed";
+    expect((await gh.listOpenPulls()).map((p) => p.number)).toEqual([a]);
+  });
+});

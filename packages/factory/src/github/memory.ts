@@ -201,6 +201,9 @@ export class InMemoryGitHub implements GitHubPort {
       if (p.headRef === branch && p.state === "open") return clonePull(p);
     return null;
   }
+  async listOpenPulls(): Promise<Pull[]> {
+    return [...this.pulls.values()].filter((p) => p.state === "open").map(clonePull);
+  }
   async listPullFiles(n: number): Promise<ChangedFile[]> {
     return this.mustPull(n).files.map((f) => ({ ...f }));
   }

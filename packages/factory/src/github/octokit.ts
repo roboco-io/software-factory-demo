@@ -195,6 +195,15 @@ export function createOctokitPort(o: {
       const first = data[0];
       return first ? toPull(first) : null;
     },
+    async listOpenPulls() {
+      const data = await octokit.paginate(octokit.rest.pulls.list, {
+        ...base,
+        state: "open",
+        base: "main",
+        per_page: 100,
+      });
+      return data.map(toPull);
+    },
     async listPullFiles(n) {
       const { data: pull } = await octokit.rest.pulls.get({ ...base, pull_number: n });
       const expected = pull.changed_files;

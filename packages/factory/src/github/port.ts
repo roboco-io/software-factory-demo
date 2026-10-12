@@ -100,6 +100,8 @@ export interface GitHubPort {
   getPermission(user: string): Promise<Permission>;
   getPull(n: number): Promise<Pull>;
   findOpenPullByHead(branch: string): Promise<Pull | null>;
+  // 열린 PR(base main) 전체. 끝까지 읽지 못하면 예외다.
+  listOpenPulls(): Promise<Pull[]>;
   listPullFiles(n: number): Promise<ChangedFile[]>;
   createPull(input: {
     title: string;

@@ -472,3 +472,41 @@ describe("history listing", () => {
     ]);
   });
 });
+
+describe("listOpenPulls", () => {
+  it("lists open pulls against main across pages", async () => {
+    const calls: string[] = [];
+    const gh = port(
+      [
+        {
+          method: "GET",
+          path: /\/repos\/o\/r\/pulls$/,
+          status: 200,
+          body: [
+            {
+              number: 5,
+              title: "t",
+              body: null,
+              user: { login: "bot" },
+              head: { ref: "h", sha: "s" },
+              base: { ref: "main" },
+              labels: [{ name: "factory:improve" }],
+              draft: false,
+              state: "open",
+            },
+          ],
+        },
+      ],
+      calls,
+    );
+    const out = await gh.listOpenPulls();
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      number: 5,
+      author: "bot",
+      labels: ["factory:improve"],
+      body: "",
+    });
+    expect(calls[0]).toBe("GET /repos/o/r/pulls?state=open&base=main&per_page=100");
+  });
+});

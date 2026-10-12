@@ -20,6 +20,13 @@ function context(
 }
 
 describe("cli main", () => {
+  it("collect prints a CollectResult as JSON", async () => {
+    const h = makeTestDeps();
+    const out: string[] = [];
+    expect(await main(["collect", "--json"], context(h, [], out))).toBe(0);
+    expect(JSON.parse(out.at(-1)!)).toMatchObject({ events: 0, candidates: [], excluded: [] });
+  });
+
   it("smoke-report maps non-success results to failure and requires a result", async () => {
     const h = makeTestDeps();
     const out: string[] = [];
