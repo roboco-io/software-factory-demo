@@ -7,6 +7,8 @@ import { isSafeRelativePath } from "./evidence";
 export const EVAL_DIR = "factory/evals";
 export const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const MAX_FIXTURE_BYTES = 20 * 1024;
+const MAX_CASE_BYTES = 20 * 1024;
+const MAX_PROMPT_BYTES = 200 * 1024;
 
 export const EvalCaseSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -40,41 +42,73 @@ export function normalizeText(s: string): string {
   return s.normalize("NFKC").replace(/\s+/g, " ").trim();
 }
 
-function readFixture(dir: string, name: string): string {
-  const p = path.join(dir, name);
-  let st;
-  try {
-    st = lstatSync(p);
-  } catch {
-    throw new Error("fixture 파일이 없다");
+// treeRoot 아래 상대 경로의 각 구성요소를 lstat해 symlink·비정규 파일을 거부하고 읽는다.
+// PR이 제어하는 트리가 symlink로 러너의 다른 파일을 읽게 만드는 것을 막는다.
+function readRegularFile(treeRoot: string, rel: string, maxBytes: number, label: string): string {
+  const parts = rel.split("/");
+  let cur = treeRoot;
+  for (let i = 0; i < parts.length; i++) {
+    cur = path.join(cur, parts[i]!);
+    let st;
+    try {
+      st = lstatSync(cur);
+    } catch {
+      throw new Error(`${label}이(가) 없다`);
+    }
+    if (st.isSymbolicLink()) throw new Error(`${label} 경로에 symlink가 있다`);
+    const last = i === parts.length - 1;
+    if (last ? !st.isFile() : !st.isDirectory())
+      throw new Error(`${label}이(가) 일반 파일이 아니다`);
+    if (last && st.size > maxBytes) throw new Error(`${label}이(가) ${maxBytes / 1024}KB를 넘는다`);
   }
-  if (st.isSymbolicLink() || !st.isFile()) throw new Error("fixture가 일반 파일이 아니다");
-  if (st.size > MAX_FIXTURE_BYTES) throw new Error("fixture가 20KB를 넘는다");
-  return readFileSync(p, "utf8");
+  return readFileSync(cur, "utf8");
 }
 
 export function loadCases(treeRoot: string): { cases: LoadedCase[]; errors: string[] } {
   const cases: LoadedCase[] = [];
   const errors: string[] = [];
+  // factory, factory/evals 가 symlink이면 따라가지 않고 오류로 보고한다. 없으면 케이스가 없는 것이다.
+  let dirOk = true;
+  for (const rel of ["factory", EVAL_DIR]) {
+    try {
+      const st = lstatSync(path.join(treeRoot, rel));
+      if (st.isSymbolicLink() || !st.isDirectory()) {
+        errors.push(`${rel}: 일반 디렉토리가 아니다(symlink 포함)`);
+        dirOk = false;
+        break;
+      }
+    } catch {
+      dirOk = false;
+      break;
+    }
+  }
+  if (!dirOk) return { cases, errors };
   const base = path.join(treeRoot, EVAL_DIR);
-  let entries: string[];
+  let dirents;
   try {
-    entries = readdirSync(base, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name)
-      .sort();
+    dirents = readdirSync(base, { withFileTypes: true }).sort((x, y) => (x.name < y.name ? -1 : 1));
   } catch {
     return { cases, errors };
   }
-  for (const slug of entries) {
+  for (const e of dirents) {
+    const slug = e.name;
+    if (e.isSymbolicLink()) {
+      errors.push(`${slug}: symlink 디렉토리는 허용되지 않는다`);
+      continue;
+    }
+    if (!e.isDirectory()) continue;
     try {
       if (!SLUG.test(slug)) throw new Error("slug가 규칙에 맞지 않는다");
-      const dir = path.join(base, slug);
-      const spec = EvalCaseSchema.parse(parse(readFileSync(path.join(dir, "case.yml"), "utf8")));
-      const fixtureText = spec.kind === "lint" ? readFixture(dir, spec.fixture) : null;
+      const rel = `${EVAL_DIR}/${slug}`;
+      const yml = readRegularFile(treeRoot, `${rel}/case.yml`, MAX_CASE_BYTES, "case.yml");
+      const spec = EvalCaseSchema.parse(parse(yml));
+      const fixtureText =
+        spec.kind === "lint"
+          ? readRegularFile(treeRoot, `${rel}/${spec.fixture}`, MAX_FIXTURE_BYTES, "fixture")
+          : null;
       cases.push({ slug, spec, fixtureText });
-    } catch (e) {
-      errors.push(`${slug}: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`);
+    } catch (err) {
+      errors.push(`${slug}: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
     }
   }
   return { cases, errors };
@@ -87,7 +121,7 @@ export async function detects(treeRoot: string, c: LoadedCase, d: Detector): Pro
     return ids.includes(spec.rule);
   }
   try {
-    const content = readFileSync(path.join(treeRoot, spec.file), "utf8");
+    const content = readRegularFile(treeRoot, spec.file, MAX_PROMPT_BYTES, spec.file);
     return normalizeText(content).includes(normalizeText(spec.text));
   } catch {
     return false;

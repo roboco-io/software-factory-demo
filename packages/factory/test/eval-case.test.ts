@@ -66,4 +66,73 @@ describe("eval cases", () => {
     expect(errors).toHaveLength(1);
     expect(await detects(root, cases[0]!, fakeLint([]))).toBe(false);
   });
+
+  it("does not follow a symlinked prompt file or parent dir in detects", async () => {
+    const outside = tree({ "secret.md": "열 글자 이상의 비밀 텍스트입니다" });
+    const root = tree({
+      "factory/evals/a/case.yml":
+        "kind: prompt-contains\ncategory: x\nfile: AGENTS.md\ntext: 열 글자 이상의 비밀 텍스트입니다\n",
+      "factory/evals/b/case.yml":
+        "kind: prompt-contains\ncategory: x\nfile: factory/prompts/p.md\ntext: 열 글자 이상의 비밀 텍스트입니다\n",
+    });
+    symlinkSync(path.join(outside, "secret.md"), path.join(root, "AGENTS.md"));
+    symlinkSync(outside, path.join(root, "factory/prompts"));
+    const { cases, errors } = loadCases(root);
+    expect(errors).toEqual([]);
+    expect(cases).toHaveLength(2);
+    for (const c of cases) expect(await detects(root, c, fakeLint([]))).toBe(false);
+  });
+
+  it("reports symlinked case.yml and symlinked slug dirs in errors", () => {
+    const outside = tree({
+      "case.yml": "kind: lint\ncategory: x\nfixture: f.ts\nasPath: apps/a.ts\nrule: r\n",
+    });
+    const root = tree({ "factory/evals/real/f.ts": "x" });
+    mkdirSync(path.join(root, "factory/evals/ymllink"), { recursive: true });
+    symlinkSync(path.join(outside, "case.yml"), path.join(root, "factory/evals/ymllink/case.yml"));
+    symlinkSync(outside, path.join(root, "factory/evals/dirlink"));
+    const { cases, errors } = loadCases(root);
+    expect(cases).toEqual([]);
+    expect(errors.some((e) => e.startsWith("ymllink:"))).toBe(true);
+    expect(errors.some((e) => e.startsWith("dirlink:"))).toBe(true);
+  });
+
+  it("reports a symlinked factory/evals or factory dir and loads no cases", () => {
+    const outside = tree({
+      "x/case.yml": "kind: lint\ncategory: x\nfixture: f.ts\nasPath: apps/a.ts\nrule: r\n",
+      "x/f.ts": "x",
+    });
+    const root = tree({ "factory/keep": "" });
+    symlinkSync(outside, path.join(root, "factory/evals"));
+    const r1 = loadCases(root);
+    expect(r1.cases).toEqual([]);
+    expect(r1.errors).toHaveLength(1);
+
+    const root2 = mkdtempSync(path.join(tmpdir(), "evalcase-"));
+    symlinkSync(tree({ "evals/x/case.yml": "kind: lint\n" }), path.join(root2, "factory"));
+    const r2 = loadCases(root2);
+    expect(r2.cases).toEqual([]);
+    expect(r2.errors).toHaveLength(1);
+  });
+
+  it("rejects oversized case.yml", () => {
+    const root = tree({ "factory/evals/big/case.yml": "# " + "a".repeat(20 * 1024) });
+    const { cases, errors } = loadCases(root);
+    expect(cases).toEqual([]);
+    expect(errors).toHaveLength(1);
+  });
+
+  it("rejects absolute and backslash asPath", () => {
+    const root = tree({
+      "factory/evals/abs/case.yml":
+        "kind: lint\ncategory: x\nfixture: f.ts\nasPath: /abs.ts\nrule: r\n",
+      "factory/evals/bs/case.yml":
+        'kind: lint\ncategory: x\nfixture: f.ts\nasPath: "a\\\\b.ts"\nrule: r\n',
+      "factory/evals/abs/f.ts": "x",
+      "factory/evals/bs/f.ts": "x",
+    });
+    const { cases, errors } = loadCases(root);
+    expect(cases).toEqual([]);
+    expect(errors).toHaveLength(2);
+  });
 });
