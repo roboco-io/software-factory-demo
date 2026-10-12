@@ -170,3 +170,43 @@ describe("runCollect", () => {
     expect((await runCollect(h.deps)).candidates).toHaveLength(1);
   });
 });
+
+describe("runCollect after a merged improve PR", () => {
+  it("ignores events of the same key from before the improve PR merged", async () => {
+    const h = makeTestDeps();
+    const f = [finding("error-format")];
+    for (const issue of [1, 2, 3])
+      await h.deps.runs.append(
+        rec({ ts: "2026-10-10T00:00:00Z", issue, role: "review", findings: f }),
+      );
+    h.gh.setBranch("factory/improve-x", "sha1", ["a.ts"]);
+    const n = await h.gh.createPull({
+      title: "improve",
+      body: `x\n${writeMarker(IMPROVE_MARKER, { key: "review:error-format" })}`,
+      head: "factory/improve-x",
+      base: "main",
+      draft: false,
+    });
+    await h.gh.addLabels(n, ["factory:improve"]);
+    const pr = h.gh.pulls.get(n)!;
+    pr.state = "closed";
+    pr.merged = true;
+    pr.mergedAt = "2026-10-11T00:00:00Z";
+
+    const res = await runCollect(h.deps);
+    expect(res.candidates).toEqual([]);
+    expect(res.events).toBe(0);
+
+    // the same failure recurring after the merge in three issues is a candidate again
+    for (const issue of [4, 5, 6])
+      await h.deps.runs.append(
+        rec({ ts: "2026-10-11T12:00:00Z", issue, role: "review", findings: f }),
+      );
+    const again = await runCollect(h.deps);
+    expect(again.candidates[0]).toMatchObject({ key: "review:error-format", issues: [4, 5, 6] });
+
+    // other keys and non-bot merged PRs are unaffected
+    pr.author = "someone";
+    expect((await runCollect(h.deps)).candidates[0]?.issues).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+});
