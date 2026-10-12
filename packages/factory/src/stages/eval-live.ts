@@ -36,9 +36,8 @@ export interface EvalLivePlan {
   pr: number;
   issue: number;
   key: string;
+  // prepare 시점의 origin/main 커밋. agent 단계에서 merge-base를 구하지 못할 때 base로 대체한다.
   baseSha: string;
-  // base 규칙을 어디서 가져왔는가. true면 PR head와 origin/main의 merge-base, false면 merge-base를 구하지 못해 현재 origin/main이다.
-  baseIsMergeBase: boolean;
   headSha: string;
   // 구현 프롬프트의 템플릿 변수. 사이드마다 그 트리의 factory/prompts/implement.md로 렌더한다.
   // 개선 PR이 프롬프트를 바꿨다면 head 사이드만 바뀐 프롬프트를 받는다.
@@ -59,7 +58,12 @@ export interface SideResult {
   note: string;
 }
 
-export type EvalLiveOutcome = { sides: SideResult[] };
+export interface EvalLiveOutcome {
+  // agent 단계가 base 작업 트리에 실제로 쓴 커밋과, 그것이 PR head와 origin/main의 merge-base인지 여부.
+  baseSha: string;
+  baseIsMergeBase: boolean;
+  sides: SideResult[];
+}
 
 const SIDES = ["base", "head"] as const;
 const MAX_CATEGORIES = 100;
@@ -76,6 +80,8 @@ const SideSchema = z.object({
   note: z.string().max(MAX_NOTE),
 });
 const OutcomeSchema = z.object({
+  baseSha: z.string().regex(/^[0-9a-f]{40}$/),
+  baseIsMergeBase: z.boolean(),
   sides: z
     .array(SideSchema)
     .length(2)
@@ -108,10 +114,10 @@ export function renderEvalLiveComment(plan: EvalLivePlan, o: EvalLiveOutcome): s
   return [
     `## eval-live: 개선 PR #${plan.pr} 규칙 비교`,
     "",
-    `증거 이슈 #${plan.issue}를 base 규칙(\`${codeCell(SHORT(plan.baseSha))}\`)과 이 PR의 head 규칙(\`${codeCell(SHORT(plan.headSha))}\`)으로 각각 다시 구현하고 리뷰했다. ` +
+    `증거 이슈 #${plan.issue}를 base 규칙(\`${codeCell(SHORT(o.baseSha))}\`)과 이 PR의 head 규칙(\`${codeCell(SHORT(plan.headSha))}\`)으로 각각 다시 구현하고 리뷰했다. ` +
       `구현 엔진은 ${plan.implement.engine}/\`${codeCell(plan.implement.model)}\`, 리뷰 엔진은 ${plan.review.engine}/\`${codeCell(plan.review.model)}\`이다. ` +
       "커밋·푸시는 하지 않았다. 이 실행의 리뷰 지적이 주간 리포트의 범주 집계에 섞이지 않도록 런 기록도 남기지 않았다.",
-    ...(plan.baseIsMergeBase
+    ...(o.baseIsMergeBase
       ? []
       : [
           "",
@@ -277,23 +283,14 @@ export const evalLiveStage: PhasedStage<EvalLiveArgs, EvalLivePlan, EvalLiveOutc
     }
     const prompt = await buildImplementPrompt(deps, issue);
     await deps.git.fetch("main");
-    // 비교가 main의 그 사이 변화와 섞이지 않도록 PR head와 origin/main의 merge-base를 base로 쓴다.
-    // work 체크아웃에 head 커밋이 없어 구하지 못하면 현재 origin/main으로 대체하고 코멘트에 밝힌다.
-    const mb = await deps
-      .spawn("git", ["merge-base", "origin/main", pull.headSha], {
-        cwd: deps.settings.workdir,
-        env: scrubEnv(deps.settings.env),
-      })
-      .catch(() => null);
-    const mbSha = mb?.code === 0 ? mb.stdout.trim() : "";
-    const baseIsMergeBase = /^[0-9a-f]{40}$/.test(mbSha);
-    const baseSha = baseIsMergeBase ? mbSha : await deps.git.revParse("origin/main");
+    // prepare는 얕은 main 체크아웃에서 돌아 PR head 커밋이 없다. merge-base는 agent 단계(work 체크아웃)에서 구하고,
+    // 여기서는 대체용 origin/main 커밋만 기록한다.
+    const baseSha = await deps.git.revParse("origin/main");
     return {
       pr: args.pr,
       issue: args.issue,
       key,
       baseSha,
-      baseIsMergeBase,
       headSha: pull.headSha,
       implementVars: prompt.vars,
       issueTitle: issue.title,
@@ -304,11 +301,22 @@ export const evalLiveStage: PhasedStage<EvalLiveArgs, EvalLivePlan, EvalLiveOutc
   },
 
   async agent(deps, plan) {
+    // 비교가 main의 그 사이 변화와 섞이지 않도록 PR head와 origin/main의 merge-base를 base로 쓴다.
+    // 구하지 못하면 prepare가 기록한 origin/main 커밋으로 대체하고 코멘트에 밝힌다.
+    const mb = await deps
+      .spawn("git", ["merge-base", "origin/main", plan.headSha], {
+        cwd: deps.settings.workdir,
+        env: scrubEnv(deps.settings.env),
+      })
+      .catch(() => null);
+    const mbSha = mb?.code === 0 ? mb.stdout.trim() : "";
+    const baseIsMergeBase = /^[0-9a-f]{40}$/.test(mbSha);
+    const baseSha = baseIsMergeBase ? mbSha : plan.baseSha;
     const sides: SideResult[] = [];
     for (const side of SIDES) {
-      sides.push(await runSide(deps, plan, side, side === "base" ? plan.baseSha : plan.headSha));
+      sides.push(await runSide(deps, plan, side, side === "base" ? baseSha : plan.headSha));
     }
-    return { sides };
+    return { baseSha, baseIsMergeBase, sides };
   },
 
   parseOutcome(raw) {

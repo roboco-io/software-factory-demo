@@ -240,6 +240,32 @@ describe("createOctokitPort", () => {
       expect(muts[1]).toContain('"itemId":"ITEM"');
       expect(muts[1]).toContain('"optionId":"O_approved"');
     });
+
+    it("sends every board GraphQL call with an abort signal and no request option in the variables", async () => {
+      const sent: string[] = [];
+      const signals: (AbortSignal | null | undefined)[] = [];
+      const inner = graphql((q) => {
+        if (q.includes("organization("))
+          return { organization: { id: "ORG", projectsV2: { nodes: [board("P1")] } } };
+        if (q.includes("repository(")) return { repository: { issue: { id: "ISSUE_5" } } };
+        if (q.includes("addProjectV2ItemById"))
+          return { addProjectV2ItemById: { item: { id: "ITEM" } } };
+        return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM" } } };
+      }, sent);
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: ((i: string | URL | Request, init?: RequestInit) => {
+          signals.push(init?.signal);
+          return inner(i, init);
+        }) as typeof fetch,
+      });
+      expect(await gh.syncBoardStatus(spec, 5, "approved")).toBe("synced");
+      expect(signals).toHaveLength(4);
+      for (const sig of signals) expect(sig).toBeInstanceOf(AbortSignal);
+      expect(sent.join("\n")).not.toContain("request");
+    });
   });
 
   describe("ensureBoard", () => {

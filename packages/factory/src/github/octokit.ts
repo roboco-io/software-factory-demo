@@ -30,6 +30,8 @@ const FIND_BOARD = `query($org: String!, $q: String!) {
   }
 }`;
 
+const BOARD_TIMEOUT_MS = 10_000;
+
 interface BoardInfo {
   orgId: string;
   projectId: string;
@@ -125,10 +127,16 @@ export function createOctokitPort(o: {
   });
   const base = { owner: o.owner, repo: o.repo };
 
+  // 멈춘 GraphQL 호출이 상태 전이를 붙잡지 않도록 보드 호출에는 제한 시간을 둔다.
+  const boardGql = <T = unknown>(query: string, vars: Record<string, unknown> = {}): Promise<T> =>
+    octokit.graphql<T>(query, {
+      ...vars,
+      request: { signal: AbortSignal.timeout(BOARD_TIMEOUT_MS) },
+    });
   let cached: BoardInfo | null = null;
   async function findBoard(spec: BoardSpec): Promise<BoardLookup> {
     if (cached) return { kind: "found", board: cached };
-    const res = await octokit.graphql<{
+    const res = await boardGql<{
       organization: {
         id: string;
         projectsV2: {
@@ -158,7 +166,7 @@ export function createOctokitPort(o: {
     return { kind: "found", board: cached };
   }
   async function createBoardField(projectId: string, spec: BoardSpec): Promise<void> {
-    await octokit.graphql(
+    await boardGql(
       `mutation($input: CreateProjectV2FieldInput!) { createProjectV2Field(input: $input) { projectV2Field { ... on ProjectV2SingleSelectField { id } } } }`,
       {
         input: {
@@ -515,7 +523,7 @@ export function createOctokitPort(o: {
         return { created: false, url: found.url };
       }
       const repo = await octokit.rest.repos.get({ ...base });
-      const made = await octokit.graphql<{
+      const made = await boardGql<{
         createProjectV2: { projectV2: { id: string; url: string } };
       }>(
         `mutation($ownerId: ID!, $title: String!, $repositoryId: ID!) { createProjectV2(input: {ownerId: $ownerId, title: $title, repositoryId: $repositoryId}) { projectV2 { id url } } }`,
@@ -524,7 +532,7 @@ export function createOctokitPort(o: {
       const project = made.createProjectV2.projectV2;
       await createBoardField(project.id, spec);
       try {
-        await octokit.graphql(
+        await boardGql(
           `mutation($projectId: ID!) { updateProjectV2(input: {projectId: $projectId, public: true}) { projectV2 { id } } }`,
           { projectId: project.id },
         );
@@ -542,15 +550,15 @@ export function createOctokitPort(o: {
       const { board } = found;
       const optionId = board.options.get(option);
       if (!optionId) throw new Error(`보드 옵션 없음: ${option}`);
-      const iss = await octokit.graphql<{ repository: { issue: { id: string } } }>(
+      const iss = await boardGql<{ repository: { issue: { id: string } } }>(
         `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { id } } }`,
         { owner: base.owner, name: base.repo, number: issue },
       );
-      const added = await octokit.graphql<{ addProjectV2ItemById: { item: { id: string } } }>(
+      const added = await boardGql<{ addProjectV2ItemById: { item: { id: string } } }>(
         `mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }`,
         { projectId: board.projectId, contentId: iss.repository.issue.id },
       );
-      await octokit.graphql(
+      await boardGql(
         `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) { updateProjectV2ItemFieldValue(input: {projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: {singleSelectOptionId: $optionId}}) { projectV2Item { id } } }`,
         {
           projectId: board.projectId,

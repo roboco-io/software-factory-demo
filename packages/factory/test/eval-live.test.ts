@@ -12,7 +12,7 @@ import { runPhase } from "../src/stages/phased";
 import { BOT, makeTestDeps, type TestHarness } from "./helpers";
 
 const HEAD_SHA = "c".repeat(40);
-const MERGE_BASE = "b".repeat(40);
+const MERGE_BASE = "d".repeat(40);
 const HEAD_RULE = "HEAD-RULE-MARKER";
 
 const review = (categories: string[]) => ({
@@ -155,7 +155,6 @@ describe("eval-live", () => {
       issue: 2,
       key: "review:error-format",
       baseSha: "a".repeat(40),
-      baseIsMergeBase: true,
       headSha: HEAD_SHA,
       implementVars: {},
       issueTitle: "t",
@@ -164,6 +163,8 @@ describe("eval-live", () => {
       review: { engine: "codex" as const, model: "m", budget: { maxTurns: 1, timeoutMs: 1 } },
     };
     const out = evalLiveStage.parseOutcome({
+      baseSha: "a".repeat(40),
+      baseIsMergeBase: true,
       sides: [
         {
           side: "base",
@@ -184,7 +185,7 @@ describe("eval-live", () => {
       ],
     });
     expect(() =>
-      evalLiveStage.parseOutcome({ sides: [{ ...out.sides[0], side: "other" }] }),
+      evalLiveStage.parseOutcome({ ...out, sides: [{ ...out.sides[0], side: "other" }] }),
     ).toThrow();
     const md = renderEvalLiveComment(plan, out);
     expect(md).not.toContain("@someone");
@@ -230,25 +231,53 @@ describe("eval-live", () => {
     expect(implement.calls).toHaveLength(0);
   });
 
-  it("falls back to origin/main and says so when the merge-base cannot be computed", async () => {
-    const spawn: SpawnFn = async (cmd, args) =>
+  it("falls back to the prepare-time origin/main and says so when the agent-phase merge-base fails", async () => {
+    const calls: string[] = [];
+    const inner = fakeSpawn(calls);
+    const spawn: SpawnFn = async (cmd, args, o) =>
       cmd === "git" && args[0] === "merge-base"
-        ? { code: 1, stdout: "", stderr: "bad object" }
-        : { code: 0, stdout: "", stderr: "" };
-    const h = makeTestDeps({ spawn });
+        ? (calls.push(`git ${args.join(" ")}`), { code: 1, stdout: "", stderr: "bad object" })
+        : inner(cmd, args, o);
+    const h = makeTestDeps({
+      adapters: {
+        claude: createFakeAdapter([
+          { writeFiles: { "x.ts": "a\n" } },
+          { writeFiles: { "x.ts": "b\n" } },
+        ]),
+        codex: createFakeAdapter([review([]), review([])]),
+      },
+      spawn,
+    });
     const { pr, issue } = await improvePr(h);
     const plan = await evalLiveStage.prepare(h.deps, { pr, issue });
-    expect(plan).toMatchObject({ baseSha: h.git.baseSha, baseIsMergeBase: false });
-    const md = renderEvalLiveComment(plan!, {
-      sides: ["base", "head"].map((side) => ({
-        side: side as "base" | "head",
-        implemented: true,
-        reviewed: true,
-        categories: [],
-        costUsd: 0,
-        note: "",
-      })),
+    // prepare는 merge-base를 구하지 않는다.
+    expect(calls.some((c) => c.startsWith("git merge-base"))).toBe(false);
+    expect(plan).toMatchObject({ baseSha: h.git.baseSha });
+    const out = await evalLiveStage.agent(h.deps, plan!);
+    expect(out).toMatchObject({ baseSha: h.git.baseSha, baseIsMergeBase: false });
+    expect(calls.filter((c) => c.startsWith("git worktree add"))[0]).toContain(h.git.baseSha);
+    expect(renderEvalLiveComment(plan!, out)).toContain(
+      "merge-base로 구하지 못해 현재 origin/main을 썼다",
+    );
+  });
+
+  it("records the agent-phase merge-base in the outcome and the comment", async () => {
+    const h = makeTestDeps({
+      adapters: {
+        claude: createFakeAdapter([
+          { writeFiles: { "x.ts": "a\n" } },
+          { writeFiles: { "x.ts": "b\n" } },
+        ]),
+        codex: createFakeAdapter([review([]), review([])]),
+      },
+      spawn: fakeSpawn([]),
     });
-    expect(md).toContain("merge-base로 구하지 못해 현재 origin/main을 썼다");
+    const { pr, issue } = await improvePr(h);
+    const plan = await evalLiveStage.prepare(h.deps, { pr, issue });
+    const out = await evalLiveStage.agent(h.deps, plan!);
+    expect(out).toMatchObject({ baseSha: MERGE_BASE, baseIsMergeBase: true });
+    const md = renderEvalLiveComment(plan!, out);
+    expect(md).toContain(MERGE_BASE.slice(0, 7));
+    expect(md).not.toContain("merge-base로 구하지 못해");
   });
 });

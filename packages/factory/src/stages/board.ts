@@ -16,7 +16,7 @@ export async function syncBoard(deps: StageDeps, issue: number, state: State): P
   }
 }
 
-// 상태 라벨이 있는 열린 이슈(PR 제외)를 보드에 맞춘다. 동기화한 건수를 돌려준다.
+// 상태 라벨이 있는 열린 이슈(PR 제외)를 최신 번호부터 보드에 맞춘다. 동기화한 건수를 돌려준다.
 export async function reconcileBoard(
   deps: StageDeps,
   limit: number = RECONCILE_LIMIT,
@@ -26,7 +26,7 @@ export async function reconcileBoard(
   try {
     const issues = (await deps.gh.listOpenIssues())
       .filter((i) => !i.isPullRequest)
-      .sort((a, b) => a.number - b.number);
+      .sort((a, b) => b.number - a.number);
     for (const issue of issues) {
       if (attempts >= limit) break;
       if (!STATES.some((s) => issue.labels.includes(stateLabel(s)))) continue;
@@ -43,6 +43,8 @@ export async function reconcileBoard(
         deps.log(
           `board: #${issue.number} 재조정 실패: ${e instanceof Error ? e.message : String(e)}`,
         );
+        // 한 건도 성공하지 못했다면 권한이나 보드 설정 문제일 가능성이 높아 같은 실패를 반복하지 않는다.
+        if (count === 0) break;
       }
     }
   } catch (e) {
