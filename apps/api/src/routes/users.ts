@@ -20,6 +20,7 @@ type UpdateInput = {
 };
 
 const normEmail = (e: string) => e.trim().toLowerCase();
+const MAX_BIO = 500;
 const MIN_PASSWORD = 8;
 
 async function assertUnique(
@@ -103,8 +104,12 @@ usersRouter.put("/user", requireAuth, async (c) => {
     if (!(key in input)) continue;
     const v = input[key];
     if (v === null || v === "") patch[key] = null;
-    else if (typeof v === "string") patch[key] = v;
-    else throw new ApiError(422, { [key]: ["is invalid"] });
+    else if (typeof v === "string") {
+      if (key === "bio" && v.length > MAX_BIO) {
+        throw new ApiError(422, { bio: [`must be ${MAX_BIO} characters or less`] });
+      }
+      patch[key] = v;
+    } else throw new ApiError(422, { [key]: ["is invalid"] });
   }
   patch.updatedAt = new Date().toISOString();
 
