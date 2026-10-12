@@ -1,3 +1,4 @@
+// 완주 판정·범주 키 정의는 apps/web/src/factory/metrics.ts(대시보드)에 복사되어 있다. 한쪽을 바꾸면 다른 쪽도 바꾼다.
 import type { MergedPull, Review } from "../github/port";
 import type { RunRecord } from "../runs/store";
 import { type FailureEvent, IGNORED_REASONS } from "../stages/collect";
