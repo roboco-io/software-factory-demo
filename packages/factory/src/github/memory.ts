@@ -4,10 +4,12 @@ import {
   ConflictError,
   type ChangedFile,
   type CheckRun,
+  type CommitInfo,
   type Comment,
   type FileContent,
   type GitHubPort,
   type Issue,
+  type MergedPull,
   type Permission,
   type Pull,
   type Review,
@@ -15,6 +17,7 @@ import {
 
 interface StoredPull extends Pull {
   files: ChangedFile[];
+  mergedAt?: string;
 }
 
 function toChanged(f: string | ChangedFile): ChangedFile {
@@ -58,6 +61,7 @@ export class InMemoryGitHub implements GitHubPort {
     [];
   readonly orphanMessages = new Map<string, string>();
   readonly writes: { branch: string; path: string; message: string }[] = [];
+  readonly commits: CommitInfo[] = [];
   readonly createdAt = new Map<number, string>();
   clock: () => Date = () => new Date();
   injectConflicts = 0;
@@ -264,6 +268,21 @@ export class InMemoryGitHub implements GitHubPort {
     this.commitMessages.set(mergeSha, `${input.title}\n\n${input.message}`);
     this.merges.push({ pr: n, ...input, mergeSha });
     return true;
+  }
+  async listCommits(since: Date): Promise<CommitInfo[]> {
+    return this.commits.filter((c) => new Date(c.date) >= since).map((c) => ({ ...c }));
+  }
+  async listMergedPulls(since: Date): Promise<MergedPull[]> {
+    return [...this.pulls.values()]
+      .filter((p) => p.merged && p.mergedAt !== undefined && new Date(p.mergedAt) >= since)
+      .map((p) => ({
+        number: p.number,
+        title: p.title,
+        body: p.body,
+        author: p.author,
+        labels: [...p.labels],
+        mergedAt: p.mergedAt as string,
+      }));
   }
   async getCommitMessage(sha: string): Promise<string> {
     const m = this.commitMessages.get(sha);

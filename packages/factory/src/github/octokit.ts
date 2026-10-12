@@ -5,6 +5,7 @@ import {
   TooManyFilesError,
   type CheckRun,
   type GitHubPort,
+  type MergedPull,
   type Issue,
   type Permission,
   type Pull,
@@ -288,6 +289,45 @@ export function createOctokitPort(o: {
         if ([405, 409, 422].includes(statusOf(e) ?? 0)) return false;
         throw e;
       }
+    },
+    async listCommits(since) {
+      const data = await octokit.paginate(octokit.rest.repos.listCommits, {
+        ...base,
+        sha: "main",
+        since: since.toISOString(),
+        per_page: 100,
+      });
+      return data.map((c) => ({
+        sha: c.sha,
+        message: c.commit.message,
+        date: c.commit.committer?.date ?? c.commit.author?.date ?? "",
+      }));
+    },
+    async listMergedPulls(since) {
+      const out: MergedPull[] = [];
+      for await (const res of octokit.paginate.iterator(octokit.rest.pulls.list, {
+        ...base,
+        state: "closed",
+        base: "main",
+        sort: "updated",
+        direction: "desc",
+        per_page: 100,
+      })) {
+        for (const p of res.data) {
+          if (p.merged_at && new Date(p.merged_at) >= since)
+            out.push({
+              number: p.number,
+              title: p.title,
+              body: p.body ?? "",
+              author: p.user?.login ?? "",
+              labels: p.labels.map((l) => l.name ?? ""),
+              mergedAt: p.merged_at,
+            });
+        }
+        const last = res.data.at(-1);
+        if (!last || new Date(last.updated_at) < since) break;
+      }
+      return out;
     },
     async getCommitMessage(sha) {
       const { data } = await octokit.rest.repos.getCommit({ ...base, ref: sha });
