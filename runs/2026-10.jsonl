@@ -56,3 +56,4 @@
 {"ts":"2026-10-12T07:47:38.020Z","issue":38,"pr":39,"role":"gate","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":0}
 {"ts":"2026-10-12T07:49:25.369Z","issue":38,"pr":null,"role":"deploy","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":0}
 {"ts":"2026-10-12T08:07:14.082Z","issue":43,"pr":null,"role":"triage","engine":"pi","model":"deepseek/deepseek-flash","ok":true,"turns":6,"costUsd":0.0033352799999999995,"durationMs":12941,"failureReason":null,"round":0}
+{"ts":"2026-10-12T08:07:24.430Z","issue":42,"pr":null,"role":"triage","engine":"pi","model":"deepseek/deepseek-flash","ok":true,"turns":4,"costUsd":0.002470248,"durationMs":8762,"failureReason":null,"round":0}
