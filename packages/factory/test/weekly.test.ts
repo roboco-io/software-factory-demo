@@ -148,4 +148,15 @@ describe("weekly report", () => {
       old,
     ]);
   });
+
+  it("fails closed when improvements.json is unreadable and keeps the file", async () => {
+    const h = makeTestDeps();
+    await h.deps.runs.append(rec({}));
+    await h.gh.writeFile(DATA_BRANCH, IMPROVEMENTS_PATH, "{not json", null, "seed");
+
+    await expect(runWeeklyReport(h.deps)).rejects.toThrow(/덮어쓰지 않는다/);
+
+    const file = await h.gh.readFile(DATA_BRANCH, IMPROVEMENTS_PATH);
+    expect(file!.content).toBe("{not json");
+  });
 });

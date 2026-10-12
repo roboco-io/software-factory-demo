@@ -160,7 +160,10 @@ async function saveImprovements(
       try {
         prev = ImprovementsSchema.parse(JSON.parse(cur.content));
       } catch {
-        deps.log(`weekly: ${IMPROVEMENTS_PATH} is unreadable; rebuilding it`);
+        // 기록이 사라지지 않도록 덮어쓰지 않고 중단한다.
+        throw new Error(
+          `${DATA_BRANCH}:${IMPROVEMENTS_PATH}를 읽을 수 없다(JSON이 아니거나 형식이 다르다). 기록 보존을 위해 덮어쓰지 않는다. 파일을 확인하라.`,
+        );
       }
     }
     const byPr = new Map(prev.map((i) => [i.pr, i]));

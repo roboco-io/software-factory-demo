@@ -150,6 +150,9 @@ describe("metrics", () => {
       rec({ ok: false, failureReason: "checks_failed" }),
       rec({ ok: false, failureReason: "timeout" }),
       rec({ ok: false, failureReason: null }),
+      rec({ ok: false, failureReason: "risk_t2" }),
+      rec({ ok: false, failureReason: "risk_t3" }),
+      rec({ ok: false, failureReason: "permission_denied" }),
       rec({ ok: true }),
     ];
     expect(topFailureReasons(runs)).toEqual([

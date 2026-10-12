@@ -1,6 +1,6 @@
 import type { MergedPull, Review } from "../github/port";
 import type { RunRecord } from "../runs/store";
-import type { FailureEvent } from "../stages/collect";
+import { type FailureEvent, IGNORED_REASONS } from "../stages/collect";
 
 // 표본이 이보다 작으면 비율 대신 "데이터 부족"을 쓴다.
 export const MIN_SAMPLE = 5;
@@ -31,6 +31,7 @@ export function isoWeek(d: Date): string {
 
 // implement 런이 있는 이슈 가운데 deploy 성공 기록이 있고 실패한 런이 하나도 없는 이슈의 비율.
 // 정책 보류(risk_t2 등)도 사람 개입이므로 실패로 센다.
+// 입력 runs는 호출자가 7일 창으로 먼저 거른 것이며, 이슈별 판정은 그 창 안의 런만 대상으로 한다.
 export function completionRate(runs: RunRecord[]): Ratio {
   const implemented = new Set(
     runs.filter((r) => r.role === "implement" && r.issue > 0).map((r) => r.issue),
@@ -108,7 +109,10 @@ export function topFailureReasons(
   limit = 5,
 ): { reason: string; count: number }[] {
   return countBy(
-    runs.filter((r) => !r.ok),
+    // 정책 보류(risk_t2/risk_t3/permission_denied)는 실패가 아니므로 제외한다.
+    runs.filter(
+      (r) => !r.ok && !(IGNORED_REASONS as readonly string[]).includes(r.failureReason ?? ""),
+    ),
     (r) => r.failureReason ?? "unknown",
   )
     .slice(0, limit)
