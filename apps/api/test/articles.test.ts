@@ -41,6 +41,20 @@ describe("POST /articles", () => {
     expect(article!.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   });
 
+  it("rejects a title over 200 characters", async () => {
+    const a = await register("art");
+    const { res } = await create(a.token, { ...base, title: "a".repeat(201) });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ errors: { title: ["must be 200 characters or less"] } });
+  });
+
+  it("accepts a title of exactly 200 characters", async () => {
+    const a = await register("art");
+    const { res, article } = await create(a.token, { ...base, title: "a".repeat(200) });
+    expect(res.status).toBe(201);
+    expect(article!.title).toHaveLength(200);
+  });
+
   it.each(["title", "description", "body"])("rejects blank %s", async (field) => {
     const a = await register("art");
     const { res } = await create(a.token, { ...base, [field]: "" });
