@@ -103,8 +103,12 @@ usersRouter.put("/user", requireAuth, async (c) => {
     if (!(key in input)) continue;
     const v = input[key];
     if (v === null || v === "") patch[key] = null;
-    else if (typeof v === "string") patch[key] = v;
-    else throw new ApiError(422, { [key]: ["is invalid"] });
+    else if (typeof v === "string") {
+      if (key === "bio" && v.length > 500) {
+        return c.json({ errors: { bio: ["must be 500 characters or less"] } }, 422);
+      }
+      patch[key] = v;
+    } else throw new ApiError(422, { [key]: ["is invalid"] });
   }
   patch.updatedAt = new Date().toISOString();
 

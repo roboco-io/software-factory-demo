@@ -136,6 +136,18 @@ describe("GET/PUT /user", () => {
     expect((await set({ image: "" })).image).toBeNull();
   });
 
+  it("rejects bio over 500 chars and accepts exactly 500", async () => {
+    const a = await register("biolen");
+    const put = (bio: string) =>
+      api("/user", { method: "PUT", token: a.token, body: { user: { bio } } });
+    const bad = await put("a".repeat(501));
+    expect(bad.status).toBe(422);
+    expect(await bad.json()).toEqual({ errors: { bio: ["must be 500 characters or less"] } });
+    const ok = await put("b".repeat(500));
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as UserBody).user.bio).toBe("b".repeat(500));
+  });
+
   it.each([
     [{ email: "" }, "email"],
     [{ email: null }, "email"],
