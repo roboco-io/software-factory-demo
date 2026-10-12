@@ -5,6 +5,7 @@ import {
   createRunStore,
   monthPath,
   monthsBetween,
+  parseRecords,
   type RunRecord,
 } from "../src/runs/store";
 
@@ -88,5 +89,34 @@ describe("run store on factory-data", () => {
     expect(
       monthsBetween(new Date("2026-11-20T00:00:00Z"), new Date("2027-01-02T00:00:00Z")),
     ).toEqual(["2026-11", "2026-12", "2027-01"]);
+  });
+});
+
+describe("parseRecords findings", () => {
+  it("parses records with and without findings", () => {
+    const base = {
+      issue: 1,
+      pr: 2,
+      role: "review",
+      engine: "codex",
+      model: "m",
+      ok: true,
+      turns: 1,
+      costUsd: null,
+      durationMs: 1,
+      failureReason: null,
+      round: 0,
+    };
+    const text = [
+      JSON.stringify({ ts: "2026-10-01T00:00:00Z", ...base }),
+      JSON.stringify({
+        ts: "2026-10-02T00:00:00Z",
+        ...base,
+        findings: [{ category: "style", file: "a", message: "m" }],
+      }),
+    ].join("\n");
+    const rs = parseRecords(text);
+    expect(rs[0]?.findings).toBeUndefined();
+    expect(rs[1]?.findings).toEqual([{ category: "style", file: "a", message: "m" }]);
   });
 });

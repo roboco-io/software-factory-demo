@@ -3,6 +3,12 @@ import { BranchNotFoundError, ConflictError, type GitHubPort } from "../github/p
 
 export type RunRole = Role | "command" | "gate" | "deploy" | "intake" | "smoke";
 
+export interface RunFinding {
+  category: string;
+  file: string;
+  message: string;
+}
+
 export interface RunRecord {
   ts: string;
   issue: number;
@@ -16,6 +22,7 @@ export interface RunRecord {
   durationMs: number;
   failureReason: string | null;
   round: number;
+  findings?: RunFinding[];
 }
 
 export interface RunStore {

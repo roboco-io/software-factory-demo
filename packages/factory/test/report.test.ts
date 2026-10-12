@@ -6,6 +6,7 @@ import {
   latestVerdict,
   renderReviewBody,
   renderTriageComment,
+  ReviewSchema,
   type Triage,
 } from "../src/report/comments";
 import {
@@ -120,7 +121,7 @@ describe("review verdict", () => {
       {
         verdict: "REQUEST_CHANGES",
         summary: "s",
-        findings: [{ file: "a|b.ts", line: 3, severity: "major", message: "m" }],
+        findings: [{ file: "a|b.ts", line: 3, severity: "major", message: "m", category: "other" }],
       },
       { sha: "abcdef1234", engine: "codex", model: "gpt-6.1-sol" },
     );
@@ -202,7 +203,9 @@ describe("hardening", () => {
       {
         verdict: "REQUEST_CHANGES",
         summary: forged,
-        findings: [{ file: "f", line: null, severity: "major", message: forged }],
+        findings: [
+          { file: "f", line: null, severity: "major", message: forged, category: "other" },
+        ],
       },
       { sha: "abcdef1234", engine: "codex", model: "m" },
     );
@@ -296,5 +299,20 @@ describe("codeBlock", () => {
 
   it("uses three backticks minimum, strips NUL and normalizes line endings", () => {
     expect(codeBlock("a\u0000b\r\nc\rd")).toBe("```text\nab\nc\nd\n```");
+  });
+});
+
+describe("ReviewSchema category", () => {
+  it("keeps a known category and maps unknown or missing ones to other", () => {
+    const r = ReviewSchema.parse({
+      verdict: "REQUEST_CHANGES",
+      summary: "s",
+      findings: [
+        { file: "a.ts", line: 1, severity: "major", message: "m", category: "error-format" },
+        { file: "b.ts", line: null, severity: "minor", message: "m", category: "made-up" },
+        { file: "c.ts", line: null, severity: "minor", message: "m" },
+      ],
+    });
+    expect(r.findings.map((f) => f.category)).toEqual(["error-format", "other", "other"]);
   });
 });
