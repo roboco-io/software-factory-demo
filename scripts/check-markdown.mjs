@@ -44,12 +44,15 @@ function render(text) {
   });
 }
 
-// 렌더링 결과에서 코드와 태그를 빼고 남은 텍스트.
+// 렌더링 결과에서 코드와 태그를 빼고 남은 텍스트. 결과는 화면에 쓰지 않고 검사에만 쓴다.
+// 태그를 지운 뒤 새 태그 모양이 생길 수 있으므로 더 바뀌지 않을 때까지 반복한다.
 function plainText(html) {
-  return html
-    .replace(/<pre[\s\S]*?<\/pre>/g, "")
-    .replace(/<code[\s\S]*?<\/code>/g, "")
-    .replace(/<[^>]+>/g, "");
+  let text = html.replace(/<pre[\s\S]*?<\/pre>/g, "").replace(/<code[\s\S]*?<\/code>/g, "");
+  for (let prev = ""; prev !== text;) {
+    prev = text;
+    text = text.replace(/<[^>]+>/g, "");
+  }
+  return text;
 }
 
 export function checkText(src) {
