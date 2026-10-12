@@ -23,6 +23,43 @@ describe("deploy result", () => {
     });
   });
 
+  it("also deploys still-merged issues from earlier main commits whose deploy run was superseded", async () => {
+    const h = makeTestDeps();
+    const skipped = h.gh.addIssue({ title: "a", labels: ["factory:merged"] });
+    const old = h.gh.addIssue({ title: "b", labels: ["factory:deployed"] });
+    const newer = h.gh.addIssue({ title: "c", labels: ["factory:merged"] });
+    const head = h.gh.addIssue({ title: "d", labels: ["factory:merged"] });
+    // main history, newest first: newer(after the deployed sha), head(deployed), skipped, old
+    const commit = (sha: string, issue: number, date: string) => {
+      h.gh.commitMessages.set(sha, `x\n\nFactory-Issue: #${issue}`);
+      h.gh.commits.push({ sha, message: `x\n\nFactory-Issue: #${issue}`, date });
+    };
+    commit("s4", newer.number, "2026-10-12T02:00:00Z");
+    commit("s3", head.number, "2026-10-12T01:00:00Z");
+    commit("s2", skipped.number, "2026-10-12T00:59:00Z");
+    commit("s1", old.number, "2026-10-11T00:00:00Z");
+
+    expect(await runDeployed(h.deps, { sha: "s3" })).toEqual([head.number, skipped.number]);
+    expect((await h.gh.getIssue(skipped.number)).labels).toEqual(["factory:deployed"]);
+    expect((await h.gh.getIssue(skipped.number)).state).toBe("closed");
+    // a commit after the deployed sha is not part of this deploy
+    expect((await h.gh.getIssue(newer.number)).labels).toEqual(["factory:merged"]);
+  });
+
+  it("falls back to the deployed commit only when it is not in recent main history", async () => {
+    const h = makeTestDeps();
+    const a = h.gh.addIssue({ title: "a", labels: ["factory:merged"] });
+    const b = h.gh.addIssue({ title: "b", labels: ["factory:merged"] });
+    h.gh.commitMessages.set("zz", `x\n\nFactory-Issue: #${a.number}`);
+    h.gh.commits.push({
+      sha: "s1",
+      message: `x\n\nFactory-Issue: #${b.number}`,
+      date: "2026-10-11T00:00:00Z",
+    });
+    expect(await runDeployed(h.deps, { sha: "zz" })).toEqual([a.number]);
+    expect((await h.gh.getIssue(b.number)).labels).toEqual(["factory:merged"]);
+  });
+
   it("closes an issue that a crashed run left deployed but open", async () => {
     const h = makeTestDeps();
     const i = h.gh.addIssue({ title: "a", labels: ["factory:deployed"] });
