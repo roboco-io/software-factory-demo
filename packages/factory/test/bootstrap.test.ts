@@ -6,9 +6,9 @@ import { makeTestDeps } from "./helpers";
 describe("runBootstrap", () => {
   it("creates every factory label and the factory-data branch, idempotently", async () => {
     const h = makeTestDeps();
-    expect(await runBootstrap(h.deps)).toEqual({ labels: 27, branch: DATA_BRANCH });
+    expect(await runBootstrap(h.deps)).toEqual({ labels: 29, branch: DATA_BRANCH });
     await runBootstrap(h.deps);
-    expect(h.gh.labels.size).toBe(27);
+    expect(h.gh.labels.size).toBe(29);
     for (const name of [
       "factory:new",
       "factory:deployed",
@@ -29,5 +29,12 @@ describe("runBootstrap", () => {
     expect((await h.gh.readFile(DATA_BRANCH, "README.md"))?.content).toContain(
       "runs/YYYY-MM.jsonl",
     );
+  });
+
+  it("creates the improve and report labels", async () => {
+    const h = makeTestDeps();
+    await runBootstrap(h.deps);
+    expect(h.gh.labels.has("factory:improve")).toBe(true);
+    expect(h.gh.labels.has("factory:report")).toBe(true);
   });
 });
