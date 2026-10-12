@@ -19,6 +19,7 @@ import { runGuard } from "./stages/guard";
 import { implementStage } from "./stages/implement";
 import { improveStage } from "./stages/improve";
 import type { StageDeps } from "./stages/deps";
+import { evalLiveStage } from "./stages/eval-live";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
 import { runCollect } from "./stages/collect";
 import { reviewStage } from "./stages/review";
@@ -142,6 +143,8 @@ export const COMMANDS: Record<string, Handler> = {
     );
   },
   improve: (ctx, v) => phased(ctx, v, improveStage, { issue: num(v, "issue") }),
+  "eval-live": (ctx, v) =>
+    phased(ctx, v, evalLiveStage, { pr: num(v, "pr"), issue: num(v, "issue") }),
   gate: async (ctx, v) => {
     const pr = optNum(v, "pr");
     const branch = str(v, "branch");

@@ -198,6 +198,24 @@ describe("cli main", () => {
     expect(await main(["improve", "--phase", "all"], context(h, [], out))).toBe(2);
   });
 
+  it("runs eval-live in the requested phase and requires --pr and --issue", async () => {
+    const h = makeTestDeps();
+    const { pr, issue } = await openBotPr(h);
+    const phases: Phase[] = [];
+    const out: string[] = [];
+    expect(
+      await main(
+        ["eval-live", "--pr", String(pr), "--issue", String(issue), "--phase", "all"],
+        context(h, phases),
+      ),
+    ).toBe(0);
+    expect(phases).toEqual(["all"]);
+    expect((await h.gh.listComments(pr)).at(-1)?.body).toContain("개선 PR이 아니다");
+    expect(
+      await main(["eval-live", "--pr", String(pr), "--phase", "all"], context(h, [], out)),
+    ).toBe(2);
+  });
+
   it("requires an explicit --phase", async () => {
     const out: string[] = [];
     expect(await main(["triage", "--issue", "1"], context(makeTestDeps(), [], out))).toBe(2);
