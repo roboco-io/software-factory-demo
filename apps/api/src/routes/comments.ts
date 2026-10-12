@@ -4,10 +4,12 @@ import { db } from "../db/client";
 import { comments, users } from "../db/schema";
 import type { AppEnv } from "../env";
 import { readWrapped, requireString } from "../lib/body";
-import { forbidden, notFound } from "../lib/errors";
+import { ApiError, forbidden, notFound } from "../lib/errors";
 import { authedUserId, optionalAuth, requireAuth } from "../middleware/auth";
 import { serializeComment } from "../serializers";
 import { loadArticle } from "./articles";
+
+const MAX_COMMENT_LENGTH = 1000;
 
 export const commentsRouter = new Hono<AppEnv>();
 
@@ -31,6 +33,9 @@ commentsRouter.post("/articles/:slug/comments", requireAuth, async (c) => {
   if (!found) throw notFound("article");
   const input = await readWrapped<{ body: unknown }>(c, "comment");
   const body = requireString(input.body, "body");
+  if (body.length > MAX_COMMENT_LENGTH) {
+    throw new ApiError(422, { body: [`must be ${MAX_COMMENT_LENGTH} characters or less`] });
+  }
   const now = new Date().toISOString();
   const row = await d
     .insert(comments)
