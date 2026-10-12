@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "../db/client";
 import { tags } from "../db/schema";
@@ -15,7 +16,16 @@ tagsRouter.get("/tags", async (c) => {
       throw new ApiError(422, { limit: ["must be between 1 and 50"] });
     }
   }
-  const query = db(c.env).select({ name: tags.name }).from(tags).orderBy(tags.name);
+  const prefix = c.req.query("prefix");
+  if (prefix !== undefined && prefix.length > 20) {
+    throw new ApiError(422, { prefix: ["must be 20 characters or less"] });
+  }
+  const base = db(c.env).select({ name: tags.name }).from(tags);
+  const filtered =
+    prefix === undefined || prefix === ""
+      ? base
+      : base.where(sql`substr(${tags.name}, 1, length(${prefix})) = ${prefix}`);
+  const query = filtered.orderBy(tags.name);
   const rows = await (limit === undefined ? query : query.limit(limit)).all();
   return c.json({ tags: rows.map((r) => r.name) });
 });
