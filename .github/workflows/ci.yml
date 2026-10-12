@@ -171,3 +171,80 @@ jobs:
         env:
           EVIDENCE_PLAN: ${{ needs.evidence-plan.outputs.plan }}
           FACTORY_WORKDIR: ${{ github.workspace }}/head
+  # 자기개선 PR의 평가 케이스 판정 계획(spec 7.2.4). 토큰으로 PR 작성자와 메타만 읽고 PR 코드는 실행하지 않는다.
+  eval-plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          {
+            ref: "${{ github.event.pull_request.base.sha }}",
+            path: base,
+            persist-credentials: false,
+          }
+      - uses: pnpm/action-setup@v6
+        with: { package_json_file: base/package.json }
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: base/.nvmrc
+          cache: pnpm
+          cache-dependency-path: base/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: base
+      - id: plan
+        working-directory: base
+        run: |
+          pnpm -s factory eval --pr "$PR" --sha "$HEAD_SHA" --base "$BASE_SHA" --json > "$RUNNER_TEMP/eval.json"
+          echo "plan=$(jq -c . "$RUNNER_TEMP/eval.json")" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+  # 평가 케이스 판정. head의 ESLint 설정(PR 코드)을 실행하므로 시크릿·토큰이 없다.
+  eval:
+    needs: eval-plan
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          {
+            ref: "${{ github.event.pull_request.base.sha }}",
+            path: base,
+            persist-credentials: false,
+          }
+      - uses: actions/checkout@v7
+        with:
+          {
+            ref: "${{ github.event.pull_request.head.sha }}",
+            path: head,
+            fetch-depth: 0,
+            persist-credentials: false,
+          }
+      - uses: pnpm/action-setup@v6
+        with: { package_json_file: base/package.json }
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: base/.nvmrc
+          cache: pnpm
+          cache-dependency-path: base/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: base
+      - name: eval (시크릿·GitHub 토큰 없음)
+        working-directory: base
+        run: pnpm -s factory eval-run
+        env:
+          EVAL_PLAN: ${{ needs.eval-plan.outputs.plan }}
+          EVAL_BASE_DIR: ${{ github.workspace }}/base
+          FACTORY_WORKDIR: ${{ github.workspace }}/head

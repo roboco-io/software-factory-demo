@@ -71,6 +71,10 @@ describe("renderPrBody (spec 5.5)", () => {
     expect(parsePrMeta(body)).toEqual(report().meta);
   });
 
+  it("lists eval among the required CI checks", () => {
+    expect(renderPrBody(report())).toContain("risk-tier, evidence, eval)");
+  });
+
   it("writes '추정 불가' when the engine gave no cost", () => {
     expect(
       renderPrBody(report({ run: { engine: "codex", model: "m", turns: 3, durationMs: 1_000 } })),

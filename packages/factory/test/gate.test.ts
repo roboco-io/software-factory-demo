@@ -12,6 +12,7 @@ export const GREEN = {
   e2e: "success",
   "risk-tier": "success",
   evidence: "success",
+  eval: "success",
 };
 
 export async function verdict(

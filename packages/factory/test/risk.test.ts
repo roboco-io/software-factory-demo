@@ -102,7 +102,7 @@ describe("classifyFiles", () => {
     expect(classifyFiles(["README.md", "./README.md"], policy).files).toHaveLength(1);
   });
 
-  it("lists required checks including risk-tier and evidence", () => {
+  it("lists required checks including risk-tier, evidence and eval", () => {
     expect(policy.requiredChecks).toEqual([
       "typecheck",
       "lint",
@@ -111,6 +111,7 @@ describe("classifyFiles", () => {
       "e2e",
       "risk-tier",
       "evidence",
+      "eval",
     ]);
   });
 
