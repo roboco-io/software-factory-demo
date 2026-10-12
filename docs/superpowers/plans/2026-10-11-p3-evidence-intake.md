@@ -3892,7 +3892,7 @@ Expected: FAIL — `evidence-plan`·`evidence` job이 없고, `requiredChecks`�
 ```
 `AGENTS.md`를 고친다.
 - "## 구조"의 `packages/factory` 줄 아래에 추가: `- \`tests/smoke/\`, \`apps/web/e2e-smoke/\`: 프로덕션 읽기 전용 스모크. T3이며 구현 에이전트는 수정하지 않는다.`
-- "## 규칙"의 `- 테스트를 먼저 쓴다. ...` 줄 아래에 추가: `- 버그 이슈(\`type:bug\`) PR은 필수 체크 \`evidence\`가 PR이 추가·수정한 테스트를 수정 전 코드에서 실행해 실패하고 수정 후 코드에서 통과하는지 확인한다. 재현 테스트는 Vitest(\`apps/api/test/*.test.ts\`, \`apps/web/src/**/*.test.tsx\`)로 쓴다. Playwright E2E만으로는 통과하지 못한다.`
+- "## 규칙"의 `- 테스트를 먼저 쓴다. ...` 줄 아래에 추가: `` - 버그 이슈(`type:bug`) PR은 필수 체크 `evidence`가 PR이 추가·수정한 테스트를 수정 전 코드에서 실행해 실패하고 수정 후 코드에서 통과하는지 확인한다. 재현 테스트는 Vitest(`apps/api/test/*.test.ts`, `apps/web/src/**/*.test.tsx`)로 쓴다. Playwright E2E만으로는 통과하지 못한다. ``
 
 - [ ] **Step 4: 테스트가 통과하는지 확인**
 
