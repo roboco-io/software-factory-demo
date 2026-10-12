@@ -55,6 +55,42 @@ describe("POST /articles", () => {
     expect(article!.title).toHaveLength(200);
   });
 
+  it("rejects a description over 300 characters", async () => {
+    const a = await register("art");
+    const { res } = await create(a.token, { ...base, description: "a".repeat(301) });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({
+      errors: { description: ["must be 300 characters or less"] },
+    });
+  });
+
+  it("accepts descriptions of exactly 300 and under 300 characters", async () => {
+    const a = await register("art");
+    const full = await create(a.token, { ...base, description: "a".repeat(300) });
+    expect(full.res.status).toBe(201);
+    expect(full.article!.description).toHaveLength(300);
+    const short = await create(a.token, { ...base, title: "T2", description: "a".repeat(299) });
+    expect(short.res.status).toBe(201);
+  });
+
+  it("PUT enforces the 300 character description limit", async () => {
+    const a = await register("art");
+    const { article } = await create(a.token, base);
+    const put = (description: string) =>
+      api(`/articles/${article!.slug}`, {
+        method: "PUT",
+        token: a.token,
+        body: { article: { description } },
+      });
+    const over = await put("a".repeat(301));
+    expect(over.status).toBe(422);
+    expect(await over.json()).toEqual({
+      errors: { description: ["must be 300 characters or less"] },
+    });
+    expect((await put("a".repeat(300))).status).toBe(200);
+    expect((await put("a".repeat(10))).status).toBe(200);
+  });
+
   it.each(["title", "description", "body"])("rejects blank %s", async (field) => {
     const a = await register("art");
     const { res } = await create(a.token, { ...base, [field]: "" });

@@ -12,6 +12,7 @@ import { serializeArticle } from "../serializers";
 
 const MAX_TAGS = 20;
 const MAX_TITLE_LENGTH = 200;
+const MAX_DESCRIPTION_LENGTH = 300;
 type ArticleInput = { title: unknown; description: unknown; body: unknown; tagList: unknown };
 
 function parseTags(value: unknown): string[] {
@@ -176,6 +177,11 @@ articlesRouter.post("/articles", requireAuth, async (c) => {
     throw new ApiError(422, { title: [`must be ${MAX_TITLE_LENGTH} characters or less`] });
   }
   const description = requireString(input.description, "description");
+  if (description.length > MAX_DESCRIPTION_LENGTH) {
+    throw new ApiError(422, {
+      description: [`must be ${MAX_DESCRIPTION_LENGTH} characters or less`],
+    });
+  }
   const body = requireString(input.body, "body");
   const tagList = input.tagList === undefined ? [] : parseTags(input.tagList);
   const d = db(c.env);
@@ -212,6 +218,11 @@ articlesRouter.put("/articles/:slug", requireAuth, async (c) => {
   const patch: Partial<typeof articles.$inferInsert> = {};
   for (const key of ["title", "description", "body"] as const) {
     if (key in input) patch[key] = requireString(input[key], key);
+  }
+  if (patch.description !== undefined && patch.description.length > MAX_DESCRIPTION_LENGTH) {
+    throw new ApiError(422, {
+      description: [`must be ${MAX_DESCRIPTION_LENGTH} characters or less`],
+    });
   }
   let newTags: string[] | undefined;
   if ("tagList" in input) {
