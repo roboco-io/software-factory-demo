@@ -11,6 +11,7 @@ import { authedUserId, optionalAuth, requireAuth } from "../middleware/auth";
 import { serializeArticle } from "../serializers";
 
 const MAX_TAGS = 20;
+const MAX_TITLE_LENGTH = 200;
 type ArticleInput = { title: unknown; description: unknown; body: unknown; tagList: unknown };
 
 function parseTags(value: unknown): string[] {
@@ -170,6 +171,9 @@ articlesRouter.post("/articles", requireAuth, async (c) => {
   const userId = authedUserId(c);
   const input = await readWrapped<ArticleInput>(c, "article");
   const title = requireString(input.title, "title");
+  if (title.length > MAX_TITLE_LENGTH) {
+    throw new ApiError(422, { title: [`must be ${MAX_TITLE_LENGTH} characters or less`] });
+  }
   const description = requireString(input.description, "description");
   const body = requireString(input.body, "body");
   const tagList = input.tagList === undefined ? [] : parseTags(input.tagList);
