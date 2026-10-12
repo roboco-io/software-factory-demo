@@ -10,6 +10,7 @@
 2. 추가·변경된 테스트가 변경 내용을 실제로 검증하는가.
 3. AGENTS.md 규칙을 어기지 않았는가.
 4. 보안 문제나 데이터 손실 위험이 없는가.
+5. API 오류 응답은 반드시 `apps/api/src/lib/errors.ts`의 헬퍼(`ApiError`와 그 헬퍼 함수)로 만든다. 라우트에서 `c.json({ errors: ... })`를 직접 반환하면 category `error-format`의 major 지적이다.
 
 blocker 또는 major 지적이 하나라도 있으면 verdict는 REQUEST_CHANGES, 없으면 APPROVE다.
 
