@@ -173,7 +173,7 @@ describe("factory workflows", () => {
         expect(plans.length, `${file} ${name} uploads factory-plan`).toBe(
           name === "prepare" ? 1 : 0,
         );
-        if (name === "prepare" || name === "report") continue;
+        if (name === "prepare" || (file === "factory-weekly.yml" && name === "report")) continue;
         const download = job.steps.find(
           (s) =>
             s.uses?.startsWith("actions/download-artifact@") &&

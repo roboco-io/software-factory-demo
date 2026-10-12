@@ -52,7 +52,7 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
 
 같은 범주의 실패가 서로 다른 이슈 3건 이상에서 반복되면 그 범주가 개선 후보가 되고, `prepare`·`agent`·`publish` job이 차례로 돈다. 후보가 없으면 이 세 job은 `skipped`로 끝난다. improve 에이전트는 `AGENTS.md`, `factory/prompts/**`, `eslint.config.*`, `factory/evals/**`만 고칠 수 있으며, 고친 결과는 `factory:improve` 라벨이 붙은 PR로 열린다. 이 PR은 `factory/`와 `AGENTS.md`를 바꾸므로 T3이고, 사람(CODEOWNERS)이 승인하기 전에는 병합되지 않는다.
 
-개선 PR에서는 `eval` 필수 체크가 PR이 추가한 평가 케이스(`factory/evals/**`)를 결정적으로 실행한다. 케이스는 과거 실패 사례가 새 규칙에 의해 기계적으로 걸러지는지 확인하며, 통과해야 병합할 수 있다.
+`eval` 필수 체크는 모든 PR에서 돈다. 모든 PR에서 head 트리의 평가 케이스(`factory/evals/**`)가 모두 계속 잡혀야 하며, 이는 이전에 막은 실패가 다시 살아나지 않게 하는 회귀 방지 검사다. 봇이 연 개선 PR(`factory:improve` 라벨)은 여기에 더해 새 평가 케이스를 1개 이상 추가해야 한다. 각 새 케이스는 base 규칙으로는 잡히지 않고 head 규칙으로는 잡혀야 하며, 그래야 이 PR이 실제로 규칙을 바꾼 것이 증명된다. 봇 PR은 기존 평가 케이스를 지우거나 내용을 바꿀 수 없다. 사람이 연 PR은 케이스를 지울 수 있다. 판정은 시크릿과 GitHub 토큰이 없는 job에서 하며, PR의 ESLint 설정은 별도 자식 프로세스에서 실행한다.
 
 ## 데모 리허설: 심은 버그
 
