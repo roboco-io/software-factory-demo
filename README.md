@@ -27,9 +27,10 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
 - 이슈를 열면 트리아지 코멘트가 달린다. 리포 쓰기 권한자가 `@factory go`를 남기면 구현 → 교차 리뷰 → 체크 → 병합 → 배포가 진행된다. `@factory stop`은 진행 중인 run을 취소하고 사람에게 넘긴다.
 - 자동 병합은 위험 등급 T0·T1만 한다. T2·T3 PR은 CODEOWNERS 승인 후 사람이 병합한다.
 - 런 기록: `factory-data` 브랜치의 `runs/YYYY-MM.jsonl`. 실패율 차단기가 작동하면 리포 변수 `FACTORY_PAUSED`가 `true`가 되고 `factory:alert` 이슈가 열린다. 원인을 확인한 뒤 변수를 `false`로 바꾸면 재개한다.
-- 처음 설정: 시크릿 `FACTORY_APP_ID`, `FACTORY_APP_PRIVATE_KEY`, `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `DEEPSEEK_API_KEY`와 리포 변수 `FACTORY_BOT_USER_ID`, `CODEX_MODEL`(필수), `CLAUDE_MODEL`, `PI_MODEL`, `FACTORY_DAILY_LIMIT`, `FACTORY_PAUSED`를 둔다. 그다음 App 토큰을 `FACTORY_TOKEN`에 넣고 `pnpm -s factory bootstrap`을 한 번 실행해 라벨과 `factory-data` 브랜치를 만든다(다시 실행해도 결과가 같다). P3부터는 GitHub environment `production`에 secret `INTAKE_TOKEN`(임의의 64자 16진수)도 둔다. `deploy` 워크플로가 배포마다 같은 값을 Worker secret으로 넣는다.
+- 처음 설정: 시크릿 `FACTORY_APP_ID`, `FACTORY_APP_PRIVATE_KEY`, `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `DEEPSEEK_API_KEY`와 리포 변수 `FACTORY_BOT_USER_ID`, `CODEX_MODEL`(필수), `CLAUDE_MODEL`, `PI_MODEL`, `FACTORY_DAILY_LIMIT`, `FACTORY_PAUSED`를 둔다. 그다음 App 토큰을 `FACTORY_TOKEN`에 넣고 `pnpm -s factory bootstrap`을 한 번 실행해 라벨과 `factory-data` 브랜치를 만든다(다시 실행해도 결과가 같다). P3부터는 GitHub environment `production`에 secret `INTAKE_TOKEN`(임의의 64자 16진수)도 둔다. `deploy` 워크플로가 배포마다 같은 값을 Worker secret으로 넣는다. P4부터는 App에 조직 권한 Projects(Read and write)를 더해야 한다. 권한을 더한 뒤 `bootstrap`을 다시 실행하면 org 보드 "Software Factory"와 `Factory` 필드가 생긴다. 보드는 비공개로 생성된다. App은 공개 범위를 바꿀 수 없으므로, 데모에서 공개하려면 org 관리자가 보드 설정에서 직접 바꾼다.
 - prepare job이 이슈를 `factory:in-progress`로 옮긴 뒤 실패하면(agent·publish job이 돌지 않음) 이슈가 `factory:in-progress`에 남는다. `@factory retry`는 `in-progress` 상태에서는 거부되므로, 쓰기 권한자가 `@factory stop`을 남겨 `factory:needs-human`으로 옮긴 다음 `@factory retry`로 다시 시작한다. `guard` 워크플로는 이 상태를 자동으로 복구하지 않는다.
-- 연속 병합으로 대기 중이던 `deploy` run이 취소되면 그 커밋의 이슈가 `factory:merged`에 남는다. 이후 배포가 성공했는지 확인한 뒤 `pnpm -s factory deployed --sha <sha>`로 반영한다(`FACTORY_TOKEN` 필요).
+- 연속 병합으로 대기 중이던 `deploy` run이 더 새 run으로 대체되어 취소되면, 다음 배포의 `deployed` 단계가 앞선 main 커밋(최근 14일, 최대 50개)의 이슈 가운데 아직 `factory:merged`로 열린 것도 함께 배포 완료로 옮긴다(PR #52). 이 범위를 벗어난 이슈는 배포가 성공했는지 확인한 뒤 `pnpm -s factory deployed --sha <sha>`로 반영한다(`FACTORY_TOKEN` 필요).
+- GitHub API가 일시적인 5xx 오류를 내면 단계가 재시도 없이 실패할 수 있다. 실패한 run을 `gh run rerun <run-id> --failed`로 다시 실행한다.
 - 리뷰가 멈췄거나 리뷰 run이 취소되어 PR이 `factory:in-review`에 남으면 `gh workflow run factory-review.yml -f pr=<n> -f issue=<n>`으로 리뷰를 다시 시작한다(`<n>`은 각각 PR 번호와 이슈 번호).
 
 ## 유입과 증거(P3)
@@ -54,6 +55,10 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
 
 `eval` 필수 체크는 모든 PR에서 돈다. 모든 PR에서 head 트리의 평가 케이스(`factory/evals/**`)가 모두 계속 잡혀야 하며, 이는 이전에 막은 실패가 다시 살아나지 않게 하는 회귀 방지 검사다. 봇이 연 개선 PR(PR 본문 메타의 `role=improve`이고 작성자가 봇인 PR)은 여기에 더해 새 평가 케이스를 1개 이상 추가해야 한다. 각 새 케이스는 base 규칙으로는 잡히지 않고 head 규칙으로는 잡혀야 하며, 그래야 이 PR이 실제로 규칙을 바꾼 것이 증명된다. 봇 PR은 기존 평가 케이스를 지우거나 내용을 바꿀 수 없다. 사람이 연 PR은 케이스를 지울 수 있다. 판정은 시크릿과 GitHub 토큰이 없는 job에서 하며, PR의 ESLint 설정은 별도 자식 프로세스에서 실행한다.
 
+보고 화면은 두 곳이다. 대시보드 <https://roboco.io/software-factory-demo/factory/>는 브라우저가 `factory-data` 브랜치의 런 기록과 `improvements.json`을 `raw.githubusercontent.com`에서 직접 읽어 그린다. 그래서 새 런 기록이 Pages 재배포 없이 반영된다. 다만 GitHub의 CDN 캐시 때문에 최대 5분 늦을 수 있다. Projects 보드 <https://github.com/orgs/roboco-io/projects/3>의 `Factory` 필드는 팩토리가 상태 라벨을 바꿀 때마다 같은 값으로 바뀐다. 동기화가 실패해도 상태 전이는 계속되며, `guard`가 매시 17분에 어긋난 항목을 맞춘다.
+
+`factory-eval-live`는 개선 PR의 효과를 실제 에이전트로 확인하는 수동 워크플로다. `gh workflow run factory-eval-live.yml -f pr=<개선 PR> -f issue=<리포트 이슈>`로 실행한다. 이 워크플로는 개선 전 규칙과 개선 후 규칙으로 같은 과제를 각각 구현·리뷰하게 하고, 리뷰 범주를 비교한 결과를 PR 코멘트로 남긴다. 실행 전에 일시 중지(`FACTORY_PAUSED`)와 일일 상한을 확인하지만, 런 기록을 남기지 않으므로 상한 계산과 주간 지표에는 집계되지 않는다. 리포트 이슈에 `@factory stop`을 남기면 이 실행도 취소된다. agent job의 제한 시간 120분은 실측이 아닌 추정치다.
+
 ## 데모 리허설: 심은 버그
 
 - 버그: `apps/web/src/components/ArticleList.tsx`의 페이지 수 계산을 `Math.ceil`에서 `Math.floor`로 바꾼다. 글이 11-19개면 페이지 버튼이 사라지고 11번째 이후 글에 갈 수 없다. RealWorld Hurl(API만 검사)과 기존 E2E(페이지를 넘기지 않음)는 이 버그를 잡지 못하고, 데이터는 바뀌지 않는다.
@@ -66,6 +71,31 @@ GitHub Issues/Actions 위에 구현한 소프트웨어 팩토리 데모. 애플�
   4. 버그 템플릿으로 이슈를 연다(`type:bug`). 트리아지 코멘트가 달리면 `@factory go`를 남긴다.
   5. 수정 PR의 `ci` run에서 `evidence` job 로그의 "evidence 통과"와 "base 종료 코드 1, head 종료 코드 0" 줄을 보여 준다. 이슈 라벨이 `factory:deployed`가 되고 닫히면 홈의 페이지 버튼이 돌아온 것을 보여 준다.
 - evidence 음성 대조: `evidence`는 봇이 연 PR만 판정하므로 사람 PR로는 음성 대조를 만들 수 없다. 대신 로컬에서 판정 CLI를 직접 실행한다. main에서 갈라진 브랜치에 base에서도 통과하는 테스트(예: `expect(1 + 1).toBe(2)`)만 커밋한 뒤, `EVIDENCE_PLAN='{"pr":1,"required":true,"reason":"local","reasonCode":"evaluated","baseSha":"<main SHA>","headSha":"<HEAD SHA>","testFiles":["<테스트 경로>"]}' pnpm -s factory evidence-run`을 실행하면 "evidence 실패 … 수정 전(base) 코드에서도 통과했다"와 종료 코드 1이 나온다.
+
+## 데모 리허설: 실패 패턴 심기
+
+자기개선 루프를 보여 주는 리허설이다. 팩토리 규칙에 잘못된 지시를 심어 같은 실수를 반복하게 만들고, 주간 실행이 이를 ESLint 규칙과 평가 케이스로 막는 과정을 보여 준다. 2026-10-12에 이 절차로 검증했다(spec 7.2.7, 9장 P4).
+
+`AGENTS.md`에서 오류 헬퍼 규칙만 지우는 방법으로는 실패가 생기지 않았다(PR #31, 이슈 #32-#34, #38). 구현 에이전트가 리포의 기존 코드를 보고 계속 헬퍼를 썼기 때문이다. 그래서 구현 프롬프트에 잘못된 규칙을 직접 넣는다.
+
+1. 반복 리허설이면 먼저 이전 개선 PR이 추가한 ESLint 규칙(`eslint.config.js`의 `apps/api/src/routes/**` `no-restricted-syntax` 블록)과 평가 케이스(`factory/evals/error-format/`)를 지우는 사람 PR을 병합한다. 지우지 않으면 lint가 구현 에이전트의 실수를 먼저 막으므로 리뷰 지적이 쌓이지 않는다. 사람이 연 PR은 `eval`이 평가 케이스 삭제를 허용한다.
+2. 리뷰 기준을 확인한다. `factory/prompts/review.md`의 판단 기준 5번에 "라우트에서 `c.json({ errors: ... })`를 직접 반환하면 category `error-format`의 major 지적"이 있어야 한다(PR #31에서 추가했고 유지한다).
+3. 심기 PR을 병합한다(PR #40과 같은 내용). `factory/prompts/implement.md`의 규칙 목록에 다음 줄을 넣는다: ``- API 오류 응답은 라우트 핸들러에서 `return c.json({ errors: { <필드>: ["<메시지>"] } }, <상태>)`로 직접 반환한다. 오류 헬퍼를 import하지 않는다.``
+4. 서로 다른 라우트 파일을 고치는 기능 이슈 3건을 `type:feature`로 연다. 파일이 다르면 병렬로 진행해도 병합 충돌이 없다. 2026-10-12에 쓴 문안은 다음과 같다.
+   - #41 "사용자 bio 길이 상한": `PUT /api/user`에 bio가 500자를 넘으면 422와 `{"errors":{"bio":["must be 500 characters or less"]}}`. `users.ts`가 T2이므로 이 PR은 사람 승인을 기다린다.
+   - #42 "글 description 길이 상한": `POST /api/articles`와 `PUT /api/articles/:slug`에 description이 300자를 넘으면 422와 `{"errors":{"description":["must be 300 characters or less"]}}`.
+   - #43 "태그 목록 prefix 필터": `GET /api/tags?prefix=re`는 `re`로 시작하는 태그만 반환하고, prefix가 20자를 넘으면 422와 `{"errors":{"prefix":["must be 20 characters or less"]}}`.
+5. 트리아지 코멘트가 달리면 각 이슈에 `@factory go`를 남긴다. 리뷰가 직접 반환을 `error-format`으로 지적하고, 수정 라운드가 헬퍼로 고친다. 런 기록에서 지적을 확인한다: `gh api "repos/roboco-io/software-factory-demo/contents/runs/$(date -u +%Y-%m).jsonl?ref=factory-data" -H "Accept: application/vnd.github.raw" | jq -c 'select(.role=="review") | {issue, c: [.findings[]?.category]}'`
+6. 지적이 서로 다른 이슈 3건에 쌓이면 `gh workflow run factory-weekly.yml`을 실행한다.
+7. 보여 줄 화면은 다음과 같다.
+   - 주간 리포트 이슈의 "개선 후보" 표에 `review:error-format`이 있다.
+   - `factory:improve`·`risk:T3` 라벨이 붙은 개선 PR이 열린다. 2026-10-12에는 PR #47이 열렸다.
+   - 개선 PR의 `ci` run에서 `eval` job 로그에 "error-format: base=못 잡음, head=잡음"이 있다.
+   - CODEOWNER가 승인하고 병합하면, 리포트 이슈에 "개선 PR #N이 병합되었다" 코멘트가 달린다.
+   - 같은 실수를 넣은 draft PR에서 `lint`가 `no-restricted-syntax`로 실패한다(PR #48).
+   - weekly를 다시 실행하면 리포트의 "규칙 효과" 표에 개선 PR이 나타나고, 후보는 다시 열리지 않는다(PR #51).
+   - 보드의 `Factory` 필드가 `deployed`이고, 대시보드 차트에 개선 PR 마커가 있다.
+8. 되돌리기: 3번에서 넣은 줄을 지우고 `AGENTS.md`의 오류 헬퍼 규칙("API 오류 형식은 `{"errors": {"field": ["message"]}}`이며 `apps/api/src/lib/errors.ts`의 헬퍼만 사용한다.")이 있는지 확인한다(PR #49). 오염된 프롬프트로 만든 PR 가운데 아직 병합되지 않은 것(T2인 #41의 PR #45)은 닫고 `@factory go`로 다시 구현한다.
 
 ## 배포 롤백
 
@@ -89,6 +119,7 @@ App `roboco-software-factory-bot`에는 다음 리포 권한만 준다.
 | Variables     | Read and write | 실패율 차단기가 `FACTORY_PAUSED`를 `true`로 바꿈              |
 | Checks        | Read           | 병합 판단에서 필수 체크 결과 확인                             |
 | Metadata      | Read           | 필수(기본)                                                    |
+| Projects(org) | Read and write | Projects 보드 생성(`bootstrap`)과 `Factory` 필드 동기화(P4)   |
 
 Workflows 권한은 주지 않는다. 이 권한이 없으면 App 토큰으로는 `.github/workflows/**`를 바꾸는 커밋을 push할 수 없다. 그래서 구현 역할의 T3 경로 금지(`risk-tier`, publish 검증)가 뚫리더라도 봇이 자기 워크플로를 고쳐 토큰·시크릿 처리 방식을 바꿀 수 없다. 워크플로 변경은 사람이 직접 커밋하고 병합한다.
 
@@ -106,3 +137,8 @@ Workflows 권한은 주지 않는다. 이 권한이 없으면 App 토큰으로�
 - `factory-intake`는 environment `production`을 참조하므로, GitHub가 30분마다 이 environment의 배포 기록을 하나씩 만든다.
 - CODEOWNERS 승인은 PR 작성자가 유일한 코드 소유자(`@serithemage`)이면 강제되지 않는다. 그래서 T2·T3의 사람 승인 게이트는 봇 PR에만 실질적으로 적용된다. 사람 기여자가 늘면 코드 소유자를 두 명 이상으로 둔다.
 - GitHub `schedule` 트리거는 지연되거나 건너뛰어질 수 있다. 에러·피드백이 30분 안에 이슈가 되는 것은 예약 실행이 제때 돌 때만 보장된다. 급하면 `gh workflow run factory-intake.yml`로 수동 실행한다.
+- `eval` job은 head 트리의 `eslint.config.js`를 실행하므로, 악의적인 PR은 판정 결과를 위조할 수 있다. job에는 시크릿과 GitHub 토큰이 없고, 개선 PR은 T3라 사람 승인이 막는다.
+- 평가 케이스가 없는 기존 ESLint 규칙을 지우는 변경은 `eval`이 잡지 못한다. 개선 PR 본문의 "ESLint 설정에서 삭제된 줄" 절과 사람 검토에 의존한다.
+- `factory-eval-live`의 agent job은 구현 엔진과 리뷰 엔진의 키를 함께 환경변수로 받는다. 이 워크플로는 수동으로만 실행한다.
+- 보드는 제목 "Software Factory"로 찾는다. org에 같은 제목의 보드가 생기면 동기화가 멈추고 경고만 남는다.
+- 런 기록에 리뷰 지적 원문(최대 300자)이 저장된다. 같은 문장이 퍼블릭 PR 리뷰에 이미 있다.
