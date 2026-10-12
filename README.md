@@ -142,3 +142,9 @@ Workflows 권한은 주지 않는다. 이 권한이 없으면 App 토큰으로�
 - `factory-eval-live`의 agent job은 구현 엔진과 리뷰 엔진의 키를 함께 환경변수로 받는다. 이 워크플로는 수동으로만 실행한다.
 - 보드는 제목 "Software Factory"로 찾는다. org에 같은 제목의 보드가 생기면 동기화가 멈추고 경고만 남는다.
 - 런 기록에 리뷰 지적 원문(최대 300자)이 저장된다. 같은 문장이 퍼블릭 PR 리뷰에 이미 있다.
+
+## 라이선스
+
+이 프로젝트의 자체 코드, 문서 및 설정은 [Apache License 2.0](LICENSE)으로 배포합니다.
+
+`tests/realworld/vendor/`의 RealWorld 공식 Hurl 테스트는 원본 MIT 라이선스를 따릅니다. 원본 저작권 및 라이선스 고지는 [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)에 보존합니다. 외부 의존성은 각 패키지의 라이선스를 따릅니다.
