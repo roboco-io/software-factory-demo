@@ -127,7 +127,7 @@
 
 `eval` 필수 체크는 모든 PR에서 돈다. 모든 PR에서 head 트리의 평가 케이스(`factory/evals/**`)가 모두 계속 잡혀야 하며, 이는 이전에 막은 실패가 다시 살아나지 않게 하는 회귀 방지 검사다. 봇이 연 개선 PR(PR 본문 메타의 `role=improve`이고 작성자가 봇인 PR)은 여기에 더해 새 평가 케이스를 1개 이상 추가해야 한다. 각 새 케이스는 base 규칙으로는 잡히지 않고 head 규칙으로는 잡혀야 하며, 그래야 이 PR이 실제로 규칙을 바꾼 것이 증명된다. 봇 PR은 기존 평가 케이스를 지우거나 내용을 바꿀 수 없다. 사람이 연 PR은 케이스를 지울 수 있다. 판정은 시크릿과 GitHub 토큰이 없는 job에서 하며, PR의 ESLint 설정은 별도 자식 프로세스에서 실행한다.
 
-보고 화면은 두 곳이다. 대시보드 <https://roboco.io/software-factory-demo/factory/>는 브라우저가 `factory-data` 브랜치의 런 기록과 `improvements.json`을 `raw.githubusercontent.com`에서 직접 읽어 그린다. 그래서 새 런 기록이 Pages 재배포 없이 반영된다. 다만 GitHub의 CDN 캐시 때문에 최대 5분 늦을 수 있다. Projects 보드 <https://github.com/orgs/roboco-io/projects/3>의 `Factory` 필드는 팩토리가 상태 라벨을 바꿀 때마다 같은 값으로 바뀐다. 동기화가 실패해도 상태 전이는 계속되며, `guard`가 매시 17분에 어긋난 항목을 맞춘다.
+보고 화면은 두 곳이다. 대시보드 <https://roboco.io/software-factory-demo/factory/>는 브라우저가 `factory-data` 브랜치의 런 기록과 `improvements.json`을 `raw.githubusercontent.com`에서 직접 읽어 그린다. 요청별 처리 과정, 개선 PR과 병합 전후 관찰 기록, 역할·에이전트 도구·사용 모델별 실행 결과를 보여 준다. 비용은 보고된 실행의 합계이며 누락된 비용은 별도로 표시한다. 그래서 새 런 기록이 Pages 재배포 없이 반영된다. 다만 GitHub의 CDN 캐시 때문에 최대 5분 늦을 수 있다. Projects 보드 <https://github.com/orgs/roboco-io/projects/3>의 `Factory` 필드는 팩토리가 상태 라벨을 바꿀 때마다 같은 값으로 바뀐다. 동기화가 실패해도 상태 전이는 계속되며, `guard`가 매시 17분에 어긋난 항목을 맞춘다.
 
 `factory-eval-live`는 개선 PR의 효과를 실제 에이전트로 확인하는 수동 워크플로다. `gh workflow run factory-eval-live.yml -f pr=<개선 PR> -f issue=<리포트 이슈>`로 실행한다. 이 워크플로는 개선 전 규칙과 개선 후 규칙으로 같은 과제를 각각 구현·리뷰하게 하고, 리뷰 범주를 비교한 결과를 PR 코멘트로 남긴다. 실행 전에 일시 중지(`FACTORY_PAUSED`)와 일일 상한을 확인하지만, 런 기록을 남기지 않으므로 상한 계산과 주간 지표에는 집계되지 않는다. 리포트 이슈에 `@factory stop`을 남기면 이 실행도 취소된다. agent job의 제한 시간 120분은 실측이 아닌 추정치다.
 
@@ -166,7 +166,7 @@
    - CODEOWNER가 승인하고 병합하면, 리포트 이슈에 "개선 PR #N이 병합되었다" 코멘트가 달린다.
    - 같은 실수를 넣은 draft PR에서 `lint`가 `no-restricted-syntax`로 실패한다(PR #48).
    - weekly를 다시 실행하면 리포트의 "규칙 효과" 표에 개선 PR이 나타나고, 후보는 다시 열리지 않는다(PR #51).
-   - 보드의 `Factory` 필드가 `deployed`이고, 대시보드 차트에 개선 PR 마커가 있다.
+   - 보드의 `Factory` 필드가 `deployed`이고, 대시보드의 자가 개선 사례에 개선 PR·검증 결과 링크와 병합 전후 관찰 기록이 있다.
 8. 되돌리기: 3번에서 넣은 줄을 지우고 `AGENTS.md`의 오류 헬퍼 규칙("API 오류 형식은 `{"errors": {"field": ["message"]}}`이며 `apps/api/src/lib/errors.ts`의 헬퍼만 사용한다.")이 있는지 확인한다(PR #49). 오염된 프롬프트로 만든 PR 가운데 아직 병합되지 않은 것(T2인 #41의 PR #45)은 닫고 `@factory go`로 다시 구현한다.
 
 ## 배포 롤백
