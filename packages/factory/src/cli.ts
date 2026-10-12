@@ -26,6 +26,7 @@ import { createIntakeClient, runIntake } from "./stages/intake";
 import { normalizeSmokeResult, runSmokeReport } from "./stages/smoke";
 import { runRisk } from "./stages/risk";
 import { triageStage } from "./stages/triage";
+import { runWeeklyReport } from "./stages/weekly";
 
 export interface CliContext {
   env: NodeJS.ProcessEnv;
@@ -181,6 +182,10 @@ export const COMMANDS: Record<string, Handler> = {
   },
   collect: async (ctx) => {
     ctx.stdout(JSON.stringify(await runCollect(ctx.buildDeps(ctx.env, "all"))));
+    return 0;
+  },
+  "weekly-report": async (ctx) => {
+    ctx.stdout(JSON.stringify(await runWeeklyReport(ctx.buildDeps(ctx.env, "all"))));
     return 0;
   },
   guard: async (ctx) => {
