@@ -58,6 +58,21 @@ export interface FileContent {
   sha: string;
 }
 
+export interface CommitInfo {
+  sha: string;
+  message: string;
+  date: string;
+}
+
+export interface MergedPull {
+  number: number;
+  title: string;
+  body: string;
+  author: string;
+  labels: string[];
+  mergedAt: string;
+}
+
 export class BranchNotFoundError extends Error {
   override name = "BranchNotFoundError";
 }
@@ -85,6 +100,8 @@ export interface GitHubPort {
   getPermission(user: string): Promise<Permission>;
   getPull(n: number): Promise<Pull>;
   findOpenPullByHead(branch: string): Promise<Pull | null>;
+  // 열린 PR(base main) 전체. 끝까지 읽지 못하면 예외다.
+  listOpenPulls(): Promise<Pull[]>;
   listPullFiles(n: number): Promise<ChangedFile[]>;
   createPull(input: {
     title: string;
@@ -103,6 +120,10 @@ export interface GitHubPort {
   listReviews(n: number): Promise<Review[]>;
   listCheckRuns(sha: string): Promise<CheckRun[]>;
   mergePull(n: number, input: { sha: string; title: string; message: string }): Promise<boolean>;
+  // main의 커밋 가운데 since 이후 것. 끝까지 읽지 못하면 예외다.
+  listCommits(since: Date): Promise<CommitInfo[]>;
+  // since 이후 병합된 PR(base main). 끝까지 읽지 못하면 예외다.
+  listMergedPulls(since: Date): Promise<MergedPull[]>;
   getCommitMessage(sha: string): Promise<string>;
   readFile(branch: string, path: string): Promise<FileContent | null>;
   writeFile(

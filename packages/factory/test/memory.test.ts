@@ -76,3 +76,52 @@ describe("forbiddenGitHub", () => {
     expect((gh as unknown as Record<symbol, unknown>)[Symbol.iterator]).toBeUndefined();
   });
 });
+
+describe("InMemoryGitHub history", () => {
+  it("lists commits and merged pulls since a date", async () => {
+    const gh = new InMemoryGitHub({ botLogin: BOT });
+    gh.commits.push(
+      { sha: "a".repeat(40), message: "old", date: "2026-09-01T00:00:00Z" },
+      { sha: "b".repeat(40), message: 'Revert "feat: x"', date: "2026-10-10T00:00:00Z" },
+    );
+    expect((await gh.listCommits(new Date("2026-10-01"))).map((c) => c.message)).toEqual([
+      'Revert "feat: x"',
+    ]);
+    gh.setBranch("factory/issue-1", "sha1", ["a.ts"]);
+    const n = await gh.createPull({
+      title: "t",
+      body: "b",
+      head: "factory/issue-1",
+      base: "main",
+      draft: false,
+    });
+    gh.pulls.get(n)!.merged = true;
+    gh.pulls.get(n)!.mergedAt = "2026-10-11T00:00:00Z";
+    expect((await gh.listMergedPulls(new Date("2026-10-01"))).map((p) => p.number)).toEqual([n]);
+    expect(await gh.listMergedPulls(new Date("2026-10-12"))).toEqual([]);
+  });
+});
+
+describe("InMemoryGitHub listOpenPulls", () => {
+  it("returns only open pulls", async () => {
+    const gh = new InMemoryGitHub({ botLogin: BOT });
+    gh.setBranch("factory/issue-1", "sha1", ["a.ts"]);
+    gh.setBranch("factory/issue-2", "sha2", ["b.ts"]);
+    const a = await gh.createPull({
+      title: "a",
+      body: "",
+      head: "factory/issue-1",
+      base: "main",
+      draft: false,
+    });
+    const b = await gh.createPull({
+      title: "b",
+      body: "",
+      head: "factory/issue-2",
+      base: "main",
+      draft: false,
+    });
+    gh.pulls.get(b)!.state = "closed";
+    expect((await gh.listOpenPulls()).map((p) => p.number)).toEqual([a]);
+  });
+});

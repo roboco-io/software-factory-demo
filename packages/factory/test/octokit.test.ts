@@ -405,3 +405,108 @@ describe("createOctokitPort createOrphanBranch", () => {
     await expect(gh.createOrphanBranch("factory-data", { a: "b" }, "init")).rejects.toThrow();
   });
 });
+
+describe("history listing", () => {
+  it("listCommits maps message and committer date", async () => {
+    const calls: string[] = [];
+    const gh = port(
+      [
+        {
+          method: "GET",
+          path: /\/repos\/o\/r\/commits$/,
+          status: 200,
+          body: [
+            { sha: "s1", commit: { message: "m1", committer: { date: "2026-10-10T00:00:00Z" } } },
+          ],
+        },
+      ],
+      calls,
+    );
+    expect(await gh.listCommits(new Date("2026-10-01T00:00:00Z"))).toEqual([
+      { sha: "s1", message: "m1", date: "2026-10-10T00:00:00Z" },
+    ]);
+    expect(calls[0]).toBe(
+      "GET /repos/o/r/commits?sha=main&since=2026-10-01T00%3A00%3A00.000Z&per_page=100",
+    );
+  });
+
+  it("listMergedPulls skips unmerged and old merges and stops paging", async () => {
+    const calls: string[] = [];
+    const pr = (number: number, merged_at: string | null, updated_at: string) => ({
+      number,
+      title: `t${number}`,
+      body: null,
+      user: { login: "u" },
+      labels: [{ name: "x" }],
+      merged_at,
+      updated_at,
+    });
+    const gh = port(
+      [
+        {
+          method: "GET",
+          path: /\/repos\/o\/r\/pulls$/,
+          status: 200,
+          body: [
+            pr(3, "2026-10-11T00:00:00Z", "2026-10-11T00:00:00Z"),
+            pr(2, null, "2026-10-05T00:00:00Z"),
+            pr(1, "2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"),
+          ],
+        },
+      ],
+      calls,
+    );
+    const out = await gh.listMergedPulls(new Date("2026-10-01T00:00:00Z"));
+    expect(out).toEqual([
+      {
+        number: 3,
+        title: "t3",
+        body: "",
+        author: "u",
+        labels: ["x"],
+        mergedAt: "2026-10-11T00:00:00Z",
+      },
+    ]);
+    expect(calls).toEqual([
+      "GET /repos/o/r/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100",
+    ]);
+  });
+});
+
+describe("listOpenPulls", () => {
+  it("lists open pulls against main across pages", async () => {
+    const calls: string[] = [];
+    const gh = port(
+      [
+        {
+          method: "GET",
+          path: /\/repos\/o\/r\/pulls$/,
+          status: 200,
+          body: [
+            {
+              number: 5,
+              title: "t",
+              body: null,
+              user: { login: "bot" },
+              head: { ref: "h", sha: "s" },
+              base: { ref: "main" },
+              labels: [{ name: "factory:improve" }],
+              draft: false,
+              state: "open",
+            },
+          ],
+        },
+      ],
+      calls,
+    );
+    const out = await gh.listOpenPulls();
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      number: 5,
+      author: "bot",
+      labels: ["factory:improve"],
+      body: "",
+    });
+    expect(calls[0]).toBe("GET /repos/o/r/pulls?state=open&base=main&per_page=100");
+  });
+});

@@ -24,6 +24,35 @@ describe("review stage", () => {
     expect(h.gh.dispatches).toEqual([{ file: "factory-merge.yml", inputs: { pr: String(pr) } }]);
   });
 
+  it("records finding categories and trimmed messages on the review run", async () => {
+    const findings = Array.from({ length: 12 }, (_, i) => ({
+      file: `apps/api/src/routes/r${i}.ts`,
+      line: i,
+      severity: i === 11 ? "blocker" : "minor",
+      message: "x".repeat(400),
+      category: i % 2 === 0 ? "error-format" : "style",
+    }));
+    const codex = createFakeAdapter(
+      [
+        {
+          result: {
+            summary: JSON.stringify({ verdict: "REQUEST_CHANGES", summary: "s", findings }),
+            model: "gpt-6.1-sol",
+            turns: 3,
+          },
+        },
+      ],
+      "codex",
+    );
+    const h = makeTestDeps({ adapters: { codex } });
+    const { pr } = await openBotPr(h);
+    await runPhase(reviewStage, "all", h.deps, { pr }, null);
+    const review = (await h.deps.runs.since(new Date(0))).find((r) => r.role === "review")!;
+    expect(review.findings).toHaveLength(10);
+    expect(review.findings![0]).toMatchObject({ category: "style" });
+    expect(review.findings![0]?.message).toHaveLength(300);
+  });
+
   it("dispatches fix with the reviewed sha on REQUEST_CHANGES", async () => {
     const codex = createFakeAdapter(loadFakeScript("review-changes"), "codex");
     const h = makeTestDeps({ adapters: { codex } });

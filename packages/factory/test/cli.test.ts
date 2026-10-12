@@ -20,6 +20,13 @@ function context(
 }
 
 describe("cli main", () => {
+  it("collect prints a CollectResult as JSON", async () => {
+    const h = makeTestDeps();
+    const out: string[] = [];
+    expect(await main(["collect", "--json"], context(h, [], out))).toBe(0);
+    expect(JSON.parse(out.at(-1)!)).toMatchObject({ events: 0, candidates: [], excluded: [] });
+  });
+
   it("smoke-report maps non-success results to failure and requires a result", async () => {
     const h = makeTestDeps();
     const out: string[] = [];
@@ -253,5 +260,70 @@ describe("cli main", () => {
       required: true,
       reasonCode: "unknown_state",
     });
+  });
+  const evalPlan = (over: Record<string, unknown> = {}): string =>
+    JSON.stringify({
+      pr: 3,
+      baseSha: "b".repeat(40),
+      headSha: "a".repeat(40),
+      requireNewCase: false,
+      allowDeletion: true,
+      reason: "사람 PR",
+      ...over,
+    });
+
+  it("eval prints the plan as JSON and rejects malformed sha options", async () => {
+    const h = makeTestDeps();
+    const { pr, branch } = await openBotPr(h);
+    const head = "a".repeat(40);
+    const base = "b".repeat(40);
+    h.gh.setBranch(branch, head, []);
+    const out: string[] = [];
+    expect(
+      await main(
+        ["eval", "--pr", String(pr), "--sha", head, "--base", base, "--json"],
+        context(h, [], out),
+      ),
+    ).toBe(0);
+    expect(JSON.parse(out[0]!)).toMatchObject({
+      pr,
+      baseSha: base,
+      headSha: head,
+      requireNewCase: false,
+      allowDeletion: false,
+    });
+    expect(
+      await main(["eval", "--pr", String(pr), "--sha", "HEAD", "--base", base], context(h)),
+    ).toBe(2);
+  });
+
+  it("eval-run fails closed when the plan or base dir is missing or malformed, without building deps", async () => {
+    const h = makeTestDeps();
+    const phases: Phase[] = [];
+    for (const env of [
+      {},
+      { EVAL_PLAN: "{}", EVAL_BASE_DIR: "/x" },
+      { EVAL_PLAN: evalPlan({ headSha: "HEAD" }), EVAL_BASE_DIR: "/x" },
+      { EVAL_PLAN: evalPlan() },
+    ]) {
+      const out: string[] = [];
+      const ctx = { ...context(h, phases, out), env };
+      expect(await main(["eval-run"], ctx)).toBe(1);
+      expect(out[0]).toMatch(/EVAL_PLAN|EVAL_BASE_DIR/);
+    }
+    expect(phases).toEqual([]);
+  });
+
+  it("eval-run builds agent-phase deps and fails when the work tree head differs from the plan", async () => {
+    const h = makeTestDeps();
+    const phases: Phase[] = [];
+    const out: string[] = [];
+    const ctx = {
+      ...context(h, phases, out),
+      env: { EVAL_PLAN: evalPlan(), EVAL_BASE_DIR: "/nonexistent" },
+    };
+    expect(await main(["eval-run"], ctx)).toBe(1);
+    expect(phases).toEqual(["agent"]);
+    expect(out[0]).toContain("eval 실패(PR #3)");
   });
 });

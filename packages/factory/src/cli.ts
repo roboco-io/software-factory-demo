@@ -11,6 +11,7 @@ import {
   runEvidencePlan,
   type EvidencePlan,
 } from "./stages/evidence";
+import { EvalPlanSchema, renderEvalText, runEval, runEvalPlan, type EvalPlan } from "./stages/eval";
 import { runDeployFailed, runDeployed } from "./stages/deploy";
 import { fixStage } from "./stages/fix";
 import { runGate, runOnClosed } from "./stages/gate";
@@ -18,6 +19,7 @@ import { runGuard } from "./stages/guard";
 import { implementStage } from "./stages/implement";
 import type { StageDeps } from "./stages/deps";
 import { runPhase, type Phase, type PhasedStage } from "./stages/phased";
+import { runCollect } from "./stages/collect";
 import { reviewStage } from "./stages/review";
 import { createIntakeClient, runIntake } from "./stages/intake";
 import { normalizeSmokeResult, runSmokeReport } from "./stages/smoke";
@@ -175,6 +177,10 @@ export const COMMANDS: Record<string, Handler> = {
     ctx.stdout(JSON.stringify(await runBootstrap(ctx.buildDeps(ctx.env, "all"))));
     return 0;
   },
+  collect: async (ctx) => {
+    ctx.stdout(JSON.stringify(await runCollect(ctx.buildDeps(ctx.env, "all"))));
+    return 0;
+  },
   guard: async (ctx) => {
     ctx.stdout(JSON.stringify(await runGuard(ctx.buildDeps(ctx.env, "all"))));
     return 0;
@@ -219,6 +225,35 @@ export const COMMANDS: Record<string, Handler> = {
     }
     const result = await runEvidence(ctx.buildDeps(ctx.env, "agent"), plan);
     ctx.stdout(v.json === true ? JSON.stringify(result) : renderEvidenceText(result));
+    return result.ok ? 0 : 1;
+  },
+  eval: async (ctx, v) => {
+    const plan = await runEvalPlan(ctx.buildDeps(ctx.env, "all"), {
+      pr: num(v, "pr"),
+      headSha: sha40(v, "sha"),
+      baseSha: sha40(v, "base"),
+    });
+    ctx.stdout(v.json === true ? JSON.stringify(plan) : `eval: ${plan.reason}`);
+    return 0;
+  },
+  "eval-run": async (ctx) => {
+    // 계획은 다른 job이 넘긴 값이다. 형식이 틀리거나 없으면 통과시키지 않는다.
+    let plan: EvalPlan;
+    try {
+      plan = EvalPlanSchema.parse(JSON.parse(ctx.env.EVAL_PLAN ?? ""));
+    } catch {
+      ctx.stdout(
+        "eval 실패: EVAL_PLAN(판정 계획)이 없거나 형식이 틀렸다. eval-plan job 결과를 확인한다.",
+      );
+      return 1;
+    }
+    const baseRoot = ctx.env.EVAL_BASE_DIR;
+    if (!baseRoot) {
+      ctx.stdout("eval 실패: EVAL_BASE_DIR가 없다.");
+      return 1;
+    }
+    const result = await runEval(ctx.buildDeps(ctx.env, "agent"), plan, baseRoot);
+    ctx.stdout(renderEvalText(result));
     return result.ok ? 0 : 1;
   },
   intake: async (ctx) => {

@@ -12,6 +12,16 @@ export const TriageSchema = z.object({
 });
 export type Triage = z.infer<typeof TriageSchema>;
 
+export const FINDING_CATEGORIES = [
+  "error-format",
+  "missing-test",
+  "security",
+  "scope-creep",
+  "style",
+  "other",
+] as const;
+export type FindingCategory = (typeof FINDING_CATEGORIES)[number];
+
 export const ReviewSchema = z.object({
   verdict: z.enum(["APPROVE", "REQUEST_CHANGES"]),
   summary: z.string(),
@@ -21,6 +31,8 @@ export const ReviewSchema = z.object({
       line: z.number().int().nullable(),
       severity: z.enum(["blocker", "major", "minor"]),
       message: z.string(),
+      // 집계(spec 7.2.1)를 위해 고정 목록만 받는다. 빠졌거나 목록 밖이면 other.
+      category: z.enum(FINDING_CATEGORIES).catch("other"),
     }),
   ),
 });

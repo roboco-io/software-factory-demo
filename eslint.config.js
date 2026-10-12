@@ -12,6 +12,8 @@ export default tseslint.config(
       "**/test-results/**",
       "tests/realworld/vendor/**",
       ".superpowers/**",
+      // 평가 케이스 픽스처는 일부러 규칙을 어기는 코드다. eval 체크가 따로 lint한다.
+      "factory/evals/**",
     ],
   },
   js.configs.recommended,

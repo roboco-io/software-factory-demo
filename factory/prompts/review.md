@@ -37,4 +37,6 @@ blocker 또는 major 지적이 하나라도 있으면 verdict는 REQUEST_CHANGES
 
 설명 없이 다음 형식의 JSON 객체 하나만 출력한다.
 
-{"verdict": "APPROVE|REQUEST_CHANGES", "summary": "판단 요약", "findings": [{"file": "경로", "line": 줄 번호 또는 null, "severity": "blocker|major|minor", "message": "무엇을 왜 고쳐야 하는가"}]}
+{"verdict": "APPROVE|REQUEST_CHANGES", "summary": "판단 요약", "findings": [{"file": "경로", "line": 줄 번호 또는 null, "severity": "blocker|major|minor", "message": "무엇을 왜 고쳐야 하는가", "category": "error-format|missing-test|security|scope-creep|style|other"}]}
+
+`category`는 지적의 종류다. 오류 응답 형식 위반은 error-format, 테스트 누락은 missing-test, 보안 문제는 security, 이슈 범위를 벗어난 변경은 scope-creep, 스타일·가독성은 style, 그 밖은 other다.

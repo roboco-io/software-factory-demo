@@ -6,6 +6,7 @@ import { AssignmentError, assignEngines, resolveModel } from "../config/agents";
 import { TooManyFilesError } from "../github/port";
 import { classifyFiles } from "../policy/risk";
 import {
+  FINDING_CATEGORIES,
   ReviewSchema,
   findTriage,
   latestVerdict,
@@ -13,6 +14,7 @@ import {
   type ReviewOutput,
 } from "../report/comments";
 import { parsePrMeta } from "../report/pr";
+import type { RunFinding } from "../runs/store";
 import {
   TimedResultSchema,
   agentRecord,
@@ -65,6 +67,7 @@ const BoundedReviewSchema = ReviewSchema.extend({
         line: z.number().int().nullable(),
         severity: z.enum(["blocker", "major", "minor"]),
         message: z.string().max(5_000),
+        category: z.enum(FINDING_CATEGORIES).catch("other"),
       }),
     )
     .max(100),
@@ -87,6 +90,20 @@ export async function heldForRisk(deps: StageDeps, pr: number): Promise<boolean>
   }
 }
 
+const SEVERITY_ORDER = { blocker: 0, major: 1, minor: 2 } as const;
+
+// 런 기록에는 심각도 순으로 최대 10건만, 길이를 잘라 남긴다.
+export function toRunFindings(findings: ReviewOutput["findings"]): RunFinding[] {
+  return [...findings]
+    .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
+    .slice(0, 10)
+    .map((f) => ({
+      category: f.category,
+      file: f.file.slice(0, 200),
+      message: f.message.slice(0, 300),
+    }));
+}
+
 // 이미 실행 기록을 남긴 계획. publish 도중 예외가 나도 crashed()가 같은 런을 다시 세지 않게 한다.
 const RECORDED = new WeakSet<ReviewPlan>();
 
@@ -95,18 +112,16 @@ async function recordOnce(deps: StageDeps, plan: ReviewPlan, out: ReviewOutcome)
   RECORDED.add(plan);
   // 에이전트가 ok=true로 보고하고 판정이 스키마를 통과했을 때만 성공으로 센다.
   const ok = out.result.ok && out.review !== null;
-  await record(
-    deps,
-    agentRecord(
-      "review",
-      plan.engine,
-      plan.model,
-      clampResult(out.result, plan.budget, ok),
-      plan.issue,
-      plan.pr,
-      plan.round,
-    ),
+  const base = agentRecord(
+    "review",
+    plan.engine,
+    plan.model,
+    clampResult(out.result, plan.budget, ok),
+    plan.issue,
+    plan.pr,
+    plan.round,
   );
+  await record(deps, out.review ? { ...base, findings: toRunFindings(out.review.findings) } : base);
 }
 
 export const reviewStage: PhasedStage<{ pr: number }, ReviewPlan, ReviewOutcome> = {
