@@ -71,6 +71,12 @@ describe("forbiddenGitHub", () => {
   it("rejects every call with the reason and is not thenable", async () => {
     const gh = forbiddenGitHub("agent 단계");
     await expect(gh.getIssue(1)).rejects.toThrow(/getIssue.*agent 단계/);
+    await expect(gh.ensureBoard({ title: "t", field: "f", options: [] })).rejects.toThrow(
+      /ensureBoard/,
+    );
+    await expect(
+      gh.syncBoardStatus({ title: "t", field: "f", options: [] }, 1, "new"),
+    ).rejects.toThrow(/syncBoardStatus/);
     expect((gh as unknown as { then?: unknown }).then).toBeUndefined();
     expect((gh as unknown as { toJSON?: unknown }).toJSON).toBeUndefined();
     expect((gh as unknown as Record<symbol, unknown>)[Symbol.iterator]).toBeUndefined();

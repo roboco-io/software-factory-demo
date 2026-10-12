@@ -30,4 +30,15 @@ describe("board sync", () => {
     expect(await reconcileBoard(h.deps)).toBe(1);
     expect(h.gh.board.get(a)).toBe("in-review");
   });
+
+  it("caps attempts, not just successes, so persistent errors stay bounded", async () => {
+    const h = makeTestDeps();
+    h.gh.boardState = "error";
+    for (let i = 0; i < 5; i++) await h.gh.createIssue(`i${i}`, "", ["factory:approved"]);
+    let calls = 0;
+    const orig = h.gh.syncBoardStatus.bind(h.gh);
+    h.gh.syncBoardStatus = (...a) => (calls++, orig(...a));
+    expect(await reconcileBoard(h.deps, 3)).toBe(0);
+    expect(calls).toBe(3);
+  });
 });

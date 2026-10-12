@@ -22,13 +22,15 @@ export async function reconcileBoard(
   limit: number = RECONCILE_LIMIT,
 ): Promise<number> {
   let count = 0;
+  let attempts = 0;
   try {
     const issues = (await deps.gh.listOpenIssues())
       .filter((i) => !i.isPullRequest)
       .sort((a, b) => a.number - b.number);
     for (const issue of issues) {
-      if (count >= limit) break;
+      if (attempts >= limit) break;
       if (!STATES.some((s) => issue.labels.includes(stateLabel(s)))) continue;
+      attempts++;
       try {
         const { state } = stateFromLabels(issue.labels);
         const r = await deps.gh.syncBoardStatus(BOARD, issue.number, state);

@@ -39,7 +39,10 @@ interface BoardInfo {
 }
 
 type BoardLookup =
-  { kind: "found"; board: BoardInfo } | { kind: "none"; orgId: string } | { kind: "ambiguous" };
+  | { kind: "found"; board: BoardInfo }
+  | { kind: "none"; orgId: string }
+  | { kind: "ambiguous" }
+  | { kind: "no-field"; projectId: string; url: string };
 
 const MAX_PULL_FILES = 3000;
 
@@ -146,13 +149,30 @@ export function createOctokitPort(o: {
     if (hits.length > 1) return { kind: "ambiguous" };
     const hit = hits[0]!;
     const field = hit.fields.nodes.find((f) => f.name === spec.field && f.options);
-    if (!field?.id || !field.options) throw new Error(`보드 필드 없음: ${spec.field}`);
+    if (!field?.id || !field.options) return { kind: "no-field", projectId: hit.id, url: hit.url };
     const options = new Map(field.options.map((o) => [o.name, o.id]));
     for (const o of spec.options) {
       if (!options.has(o)) throw new Error(`보드 옵션 없음: ${o}`);
     }
     cached = { orgId: org.id, projectId: hit.id, url: hit.url, fieldId: field.id, options };
     return { kind: "found", board: cached };
+  }
+  async function createBoardField(projectId: string, spec: BoardSpec): Promise<void> {
+    await octokit.graphql(
+      `mutation($input: CreateProjectV2FieldInput!) { createProjectV2Field(input: $input) { projectV2Field { ... on ProjectV2SingleSelectField { id } } } }`,
+      {
+        input: {
+          projectId,
+          dataType: "SINGLE_SELECT",
+          name: spec.field,
+          singleSelectOptions: spec.options.map((name) => ({
+            name,
+            color: "GRAY",
+            description: "",
+          })),
+        },
+      },
+    );
   }
   return {
     async getIssue(n) {
@@ -489,6 +509,11 @@ export function createOctokitPort(o: {
       const found = await findBoard(spec);
       if (found.kind === "found") return { created: false, url: found.board.url };
       if (found.kind === "ambiguous") throw new Error(`제목이 같은 보드가 둘 이상: ${spec.title}`);
+      if (found.kind === "no-field") {
+        // 보드는 있는데 필드 생성 전에 중단된 경우: 필드만 만들어 복구한다.
+        await createBoardField(found.projectId, spec);
+        return { created: false, url: found.url };
+      }
       const repo = await octokit.rest.repos.get({ ...base });
       const made = await octokit.graphql<{
         createProjectV2: { projectV2: { id: string; url: string } };
@@ -497,21 +522,7 @@ export function createOctokitPort(o: {
         { ownerId: found.orgId, title: spec.title, repositoryId: repo.data.node_id },
       );
       const project = made.createProjectV2.projectV2;
-      await octokit.graphql(
-        `mutation($input: CreateProjectV2FieldInput!) { createProjectV2Field(input: $input) { projectV2Field { ... on ProjectV2SingleSelectField { id } } } }`,
-        {
-          input: {
-            projectId: project.id,
-            dataType: "SINGLE_SELECT",
-            name: spec.field,
-            singleSelectOptions: spec.options.map((name) => ({
-              name,
-              color: "GRAY",
-              description: "",
-            })),
-          },
-        },
-      );
+      await createBoardField(project.id, spec);
       try {
         await octokit.graphql(
           `mutation($projectId: ID!) { updateProjectV2(input: {projectId: $projectId, public: true}) { projectV2 { id } } }`,
@@ -527,6 +538,7 @@ export function createOctokitPort(o: {
       const found = await findBoard(spec);
       if (found.kind === "none") return "no-board";
       if (found.kind === "ambiguous") return "ambiguous";
+      if (found.kind === "no-field") throw new Error(`보드 필드 없음: ${spec.field}`);
       const { board } = found;
       const optionId = board.options.get(option);
       if (!optionId) throw new Error(`보드 옵션 없음: ${option}`);

@@ -242,6 +242,151 @@ describe("createOctokitPort", () => {
     });
   });
 
+  describe("ensureBoard", () => {
+    const spec = { title: "Software Factory", field: "Factory", options: ["new", "approved"] };
+    const withField = {
+      id: "P1",
+      title: "Software Factory",
+      url: "https://x/P1",
+      fields: {
+        nodes: [
+          {
+            id: "F1",
+            name: "Factory",
+            options: [
+              { id: "a", name: "new" },
+              { id: "b", name: "approved" },
+            ],
+          },
+        ],
+      },
+    };
+    // Routes REST (repos.get) and GraphQL separately; GraphQL replies come from `reply`.
+    const mk = (
+      reply: (q: string) => unknown,
+      sent: { q: string; v: Record<string, unknown> }[],
+      failOn?: string,
+    ) =>
+      (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+        );
+        const json = (status: number, body: unknown) =>
+          withUrl(
+            new Response(JSON.stringify(body), {
+              status,
+              headers: { "content-type": "application/json" },
+            }),
+            url,
+          );
+        if (!url.pathname.endsWith("/graphql")) return json(200, { node_id: "REPO_NODE" });
+        const body = JSON.parse(String(init?.body)) as {
+          query: string;
+          variables: Record<string, unknown>;
+        };
+        sent.push({ q: body.query, v: body.variables });
+        if (failOn && body.query.includes(failOn))
+          return json(200, { errors: [{ message: "denied" }] });
+        return json(200, { data: reply(body.query) });
+      }) as typeof fetch;
+    const reply = (nodes: unknown[]) => (q: string) => {
+      if (q.includes("organization("))
+        return { organization: { id: "ORG", projectsV2: { nodes } } };
+      if (q.includes("createProjectV2("))
+        return { createProjectV2: { projectV2: { id: "NEW", url: "https://x/NEW" } } };
+      return {};
+    };
+    const names = (sent: { q: string }[]) =>
+      sent.map(
+        (s) =>
+          /(createProjectV2Field|createProjectV2|updateProjectV2|organization)\b/.exec(s.q)?.[1],
+      );
+
+    it("creates the board, field, then makes it public when absent", async () => {
+      const sent: { q: string; v: Record<string, unknown> }[] = [];
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: mk(reply([]), sent),
+      });
+      expect(await gh.ensureBoard(spec)).toEqual({ created: true, url: "https://x/NEW" });
+      expect(names(sent)).toEqual([
+        "organization",
+        "createProjectV2",
+        "createProjectV2Field",
+        "updateProjectV2",
+      ]);
+      expect(sent[1]!.v).toEqual({
+        ownerId: "ORG",
+        title: "Software Factory",
+        repositoryId: "REPO_NODE",
+      });
+      expect(sent[2]!.v).toEqual({
+        input: {
+          projectId: "NEW",
+          dataType: "SINGLE_SELECT",
+          name: "Factory",
+          singleSelectOptions: [
+            { name: "new", color: "GRAY", description: "" },
+            { name: "approved", color: "GRAY", description: "" },
+          ],
+        },
+      });
+      expect(sent[3]!.v).toEqual({ projectId: "NEW" });
+      expect(sent[3]!.q).toContain("public: true");
+    });
+
+    it("still reports created when making the board public fails", async () => {
+      const sent: { q: string; v: Record<string, unknown> }[] = [];
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: mk(reply([]), sent, "updateProjectV2("),
+      });
+      expect(await gh.ensureBoard(spec)).toEqual({ created: true, url: "https://x/NEW" });
+      expect(names(sent).at(-1)).toBe("updateProjectV2");
+    });
+
+    it("sends no mutation when the board and field already exist", async () => {
+      const sent: { q: string; v: Record<string, unknown> }[] = [];
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: mk(reply([withField]), sent),
+      });
+      expect(await gh.ensureBoard(spec)).toEqual({ created: false, url: "https://x/P1" });
+      expect(sent.some((s) => s.q.trim().startsWith("mutation"))).toBe(false);
+    });
+
+    it("creates only the missing field when the board exists without it", async () => {
+      const sent: { q: string; v: Record<string, unknown> }[] = [];
+      const bare = { ...withField, fields: { nodes: [{}] } };
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: mk(reply([bare]), sent),
+      });
+      expect(await gh.ensureBoard(spec)).toEqual({ created: false, url: "https://x/P1" });
+      expect(names(sent)).toEqual(["organization", "createProjectV2Field"]);
+      expect((sent[1]!.v.input as { projectId: string }).projectId).toBe("P1");
+    });
+
+    it("syncBoardStatus throws when the field is missing", async () => {
+      const bare = { ...withField, fields: { nodes: [{}] } };
+      const gh = createOctokitPort({
+        token: "t",
+        owner: "o",
+        repo: "r",
+        fetch: mk(reply([bare]), []),
+      });
+      await expect(gh.syncBoardStatus(spec, 5, "approved")).rejects.toThrow(/보드 필드 없음/);
+    });
+  });
+
   it("dispatches workflows on main", async () => {
     const calls: string[] = [];
     const gh = port([{ method: "POST", path: /dispatches$/, status: 204, body: null }], calls);
