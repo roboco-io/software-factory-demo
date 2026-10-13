@@ -6,7 +6,9 @@
 
 ## 미출시 (Unreleased)
 
-현재 기록할 미출시 변경은 없습니다.
+### 변경
+
+- 웹 홈 화면에 표시되는 사이트 이름을 `conduit`에서 `conveyor`로 변경했습니다. [PR #65](https://github.com/roboco-io/the-software-factory-demo/pull/65)
 
 ## 2026-10-14
 
