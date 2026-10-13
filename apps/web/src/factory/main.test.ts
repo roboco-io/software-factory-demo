@@ -57,7 +57,7 @@ describe("dashboard experience", () => {
     const story = await screen.findByRole("region", { name: "요청 하나의 처리 과정" });
     expect(within(story).getByRole("link", { name: "#42 요청 보기" })).toHaveAttribute(
       "href",
-      "https://github.com/roboco-io/software-factory-demo/issues/42",
+      "https://github.com/roboco-io/the-software-factory-demo/issues/42",
     );
     expect(within(story).getByText("배포 완료 기록")).toBeInTheDocument();
     fireEvent.change(screen.getByRole("combobox", { name: "살펴볼 요청" }), {
@@ -128,13 +128,13 @@ describe("dashboard experience", () => {
     const evidence = await screen.findByRole("region", { name: "실패가 규칙으로 바뀌는 과정" });
     expect(within(evidence).getByRole("link", { name: "개선 PR #47" })).toHaveAttribute(
       "href",
-      "https://github.com/roboco-io/software-factory-demo/pull/47",
+      "https://github.com/roboco-io/the-software-factory-demo/pull/47",
     );
     expect(within(evidence).getByText("표본 부족 · 효과 판단 보류")).toBeInTheDocument();
     expect(within(evidence).getByText(/관찰 대상 0개 요청/)).toBeInTheDocument();
     expect(within(evidence).getByRole("link", { name: "규칙 검증 결과 보기" })).toHaveAttribute(
       "href",
-      "https://github.com/roboco-io/software-factory-demo/pull/47/checks",
+      "https://github.com/roboco-io/the-software-factory-demo/pull/47/checks",
     );
   });
 
@@ -143,7 +143,7 @@ describe("dashboard experience", () => {
     expect(await screen.findByText("아직 처리 과정이 기록되지 않았습니다.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "기능 요청 작성" })).toHaveAttribute(
       "href",
-      "https://github.com/roboco-io/software-factory-demo/issues/new?template=feature.yml",
+      "https://github.com/roboco-io/the-software-factory-demo/issues/new?template=feature.yml",
     );
     expect(
       within(screen.getByRole("group", { name: "기록된 AI 비용" })).getByText("미보고"),
@@ -160,7 +160,7 @@ describe("dashboard experience", () => {
     expect(within(evidence).queryByText("0건의 관련 지적·실패")).not.toBeInTheDocument();
     expect(within(evidence).getByRole("link", { name: "개선 PR #10" })).toHaveAttribute(
       "href",
-      "https://github.com/roboco-io/software-factory-demo/pull/10",
+      "https://github.com/roboco-io/the-software-factory-demo/pull/10",
     );
   });
 
