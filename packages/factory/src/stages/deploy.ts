@@ -58,7 +58,7 @@ export async function runDeployFailed(
       issue,
       "needs-human",
       "deploy",
-      `프로덕션 배포 또는 스모크 테스트가 실패했다(커밋 \`${sha.slice(0, 7)}\`). 프로덕션 API가 이전 버전으로 남았을 수 있다. 롤백 절차는 README의 "배포 롤백" 절을 따른다.${runLink(deps.settings)}`,
+      `프로덕션 배포 또는 스모크 테스트가 실패했다(커밋 \`${sha.slice(0, 7)}\`). 프로덕션 API가 이전 버전으로 남았을 수 있다. 롤백 절차는 [개발자·운영자 안내](https://github.com/${deps.settings.owner}/${deps.settings.repo}/blob/main/docs/operations.md#배포-롤백)를 따른다.${runLink(deps.settings)}`,
     );
     if (!moved) continue;
     await deps.gh.addLabels(issue, ["source:deploy"]);

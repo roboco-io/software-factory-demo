@@ -1,8 +1,9 @@
-# 소프트웨어 팩토리 데모 설계 (software-factory-demo)
+# 소프트웨어 팩토리 데모 설계 (the-software-factory-demo)
 
 - 작성일: 2026-10-11
 - 상태: 설계 승인됨(대화), 문서 검토 대기
-- 리포: `roboco-io/software-factory-demo` (퍼블릭, pnpm 모노리포)
+- 2026-10-14 저장소 이름을 `the-software-factory-demo`로 변경했다. 아래 공개 링크는 새 이름을 사용하며, 기존 구현·검증 날짜와 로컬 작업 경로는 유지한다.
+- 리포: `roboco-io/the-software-factory-demo` (퍼블릭, pnpm 모노리포)
 - 상세 범위: P1(기반), P2(팩토리 코어). P3·P4는 처음에 목표와 인터페이스만 정의했고, 각 단계 착수 시 7장에서 상세화했다(P3: 2026-10-11, P4: 2026-10-12).
 
 ## 1. 목적과 배경
@@ -73,7 +74,7 @@ roboco.io 블로그의 연재 「오픈소스 프로젝트들로부터 배우는
 | PR별 D1 격리 | Version preview URL은 같은 바인딩을 공유하므로, PR별 Worker 이름 + PR별 D1로 격리해야 한다 | 추정(P1에서 검증) |
 | Pages PR 프리뷰 | `rossjrw/pr-preview-action@v1`, Pages 소스가 "Deploy from a branch"(`gh-pages`)여야 함, fork PR 미지원 | 확인 |
 | RealWorld 스펙 | `realworld-apps/realworld`의 `specs/api/openapi.yml`, 공식 Hurl 테스트 스위트(`run-api-tests-hurl.sh`, `HOST` 환경변수) | 확인 |
-| 프론트 URL | `roboco-io.github.io`에 CNAME이 있으므로 프로젝트 페이지는 `https://roboco.io/software-factory-demo/`로 제공될 것이다 | 추정(P1에서 검증) |
+| 프론트 URL | `roboco-io.github.io`에 CNAME이 있으므로 프로젝트 페이지는 `https://roboco.io/the-software-factory-demo/`로 제공될 것이다 | 추정(P1에서 검증) |
 
 ## 4. 전체 아키텍처
 
@@ -310,7 +311,7 @@ fix publish는 PR 브랜치를 한 커밋으로 다시 만든다(`reset --soft` 
 | 정리 | — | PR 종료 시 Cloudflare API `DELETE /accounts/{id}/workers/scripts/sfd-api-pr-N?force=true`(Worker 삭제), `wrangler d1 delete sfd-pr-N -y`, 프리뷰 디렉토리 제거 |
 | 알림 | 배포 후 스모크 통과 시 이슈에 `factory:deployed` | 프리뷰 URL 2개를 PR 코멘트로 갱신 |
 
-- 확인된 URL(2026-10-11): 프론트 `https://roboco.io/software-factory-demo/`, API `https://sfd-api.roboco.workers.dev/api`.
+- 확인된 URL(2026-10-11): 프론트 `https://roboco.io/the-software-factory-demo/`, API `https://sfd-api.roboco.workers.dev/api`.
 - Pages 소스는 "Deploy from a branch: `gh-pages`"로 설정한다. `pr-preview-action`이 "GitHub Actions" 소스를 지원하지 않기 때문이다.
 - 프로덕션 배포 워크플로가 `gh-pages` 루트를 덮어쓸 때 `pr-preview/` 디렉토리를 보존해야 한다(`peaceiris/actions-gh-pages`의 `keep_files` 또는 동등 방식).
 - 시크릿: `CLOUDFLARE_API_TOKEN`(Workers Scripts Edit, D1 Edit), `CLOUDFLARE_ACCOUNT_ID`, `JWT_SECRET`(Worker secret).
@@ -440,7 +441,7 @@ ESLint 설정이 수정 가능 경로에 있으므로 에이전트가 새 규칙
 
 처음 계획은 `AGENTS.md`에서 "API 오류는 `errors.ts` 헬퍼만 사용한다"는 문장을 잠시 빼서 실패를 심는 것이었다. 2026-10-12 리허설에서 이 방법은 실패를 만들지 못했다. 문장을 뺀 PR #31을 병합하고 오류 응답이 필요한 이슈 #32, #33, #34를 맡겼지만, 구현 에이전트는 리포의 기존 코드를 보고 계속 헬퍼를 썼다. 헬퍼를 import하지 않는 `routes/tags.ts`를 대상으로 한 이슈 #38에서도 에이전트는 `lib/errors.ts`를 찾아 썼다. 네 PR의 리뷰 지적 가운데 `error-format`은 0건이었다.
 
-그래서 실패 심기 방법을 구현 프롬프트 오염으로 바꿨다. PR #40은 `factory/prompts/implement.md`에 "API 오류 응답은 라우트에서 `c.json({ errors: ... })`로 직접 반환하고 오류 헬퍼를 import하지 않는다"는 잘못된 규칙을 넣었다. 리뷰 프롬프트에는 PR #31에서 "라우트에서 `c.json({ errors })`를 직접 반환하면 `error-format` major 지적"이라는 기준을 넣어 두었다. 이후 이슈 #41, #42, #43의 리뷰가 `error-format`을 모두 4번 지적했다. 이 방식은 "팩토리 규칙의 회귀를 자기개선 루프가 기계 규칙으로 막는다"는 이야기가 된다. 심기 PR, 이슈 문안, 되돌리기 절차는 README 런북 "데모 리허설: 실패 패턴 심기"에 기록했다.
+그래서 실패 심기 방법을 구현 프롬프트 오염으로 바꿨다. PR #40은 `factory/prompts/implement.md`에 "API 오류 응답은 라우트에서 `c.json({ errors: ... })`로 직접 반환하고 오류 헬퍼를 import하지 않는다"는 잘못된 규칙을 넣었다. 리뷰 프롬프트에는 PR #31에서 "라우트에서 `c.json({ errors })`를 직접 반환하면 `error-format` major 지적"이라는 기준을 넣어 두었다. 이후 이슈 #41, #42, #43의 리뷰가 `error-format`을 모두 4번 지적했다. 이 방식은 "팩토리 규칙의 회귀를 자기개선 루프가 기계 규칙으로 막는다"는 이야기가 된다. 심기 PR, 이슈 문안, 되돌리기 절차는 `docs/operations.md` 런북 "데모 리허설: 실패 패턴 심기"에 기록했다.
 
 #### 7.2.8 작업 분할
 
@@ -476,7 +477,7 @@ spec이 정하지 않았거나, 기존 코드 때문에 spec과 다르게 정한
 
 ### P1 기반 — 완료 조건
 
-- [ ] `roboco-io/software-factory-demo` 퍼블릭 리포 생성, pnpm 모노리포 골격, `AGENTS.md`.
+- [ ] `roboco-io/the-software-factory-demo` 퍼블릭 리포 생성, pnpm 모노리포 골격, `AGENTS.md`.
 - [ ] API가 6.1의 P1 범위를 구현하고, RealWorld Hurl 스위트에서 skip 목록 외 모든 테스트가 통과한다.
 - [ ] 웹이 6.2의 P1 화면을 제공하고 프로덕션 API와 연동된다.
 - [ ] main 병합 시 API·웹이 프로덕션에 배포되고, 배포 URL이 README에 기록된다.
@@ -487,12 +488,12 @@ spec이 정하지 않았거나, 기존 코드 때문에 spec과 다르게 정한
 
 근거는 2026-10-11 라이브 검증 결과다.
 
-- [x] GitHub App `roboco-software-factory-bot`이 설치되고 워크플로가 App 토큰으로 동작한다(사용자가 웹 UI에서 App 생성). 근거: PR [#8](https://github.com/roboco-io/software-factory-demo/pull/8)의 `mergedBy`가 `app/roboco-software-factory-bot`이다.
-- [x] 세 어댑터(claude, codex, pi)와 fake 어댑터가 5.2 인터페이스를 구현하고 계약 테스트를 통과한다. 근거: 계약 테스트 run [38133812404](https://github.com/roboco-io/software-factory-demo/actions/runs/38133812404)에서 6개 테스트 통과. 첫 run [38132807644](https://github.com/roboco-io/software-factory-demo/actions/runs/38132807644)는 codex 쓰기 모드가 실패했고 PR [#6](https://github.com/roboco-io/software-factory-demo/pull/6)에서 고쳤다(5.1 공통 규칙 참조).
-- [x] 새 이슈가 열리면 트리아지 코멘트와 `factory:triaged`가 자동으로 붙는다. 근거: 이슈 [#7](https://github.com/roboco-io/software-factory-demo/issues/7), [#9](https://github.com/roboco-io/software-factory-demo/issues/9). 이슈 [#5](https://github.com/roboco-io/software-factory-demo/issues/5)는 트리아지 턴 예산 초과로 `needs-human`이 되었고 PR #6에서 예산을 올렸다.
-- [x] 쓰기 권한자의 `@factory go`로만 구현이 시작되고, 권한 없는 사용자의 명령은 거부 코멘트를 받는다. 근거: 이슈 #5에서 읽기 권한 계정 `@jiran-dohyun`의 `@factory go`가 [거부 코멘트](https://github.com/roboco-io/software-factory-demo/issues/5#issuecomment-6108271995)를 받았고 `factory:approved`는 붙지 않았다.
-- [x] 남겨 둔 기능 1개(태그 목록, T1) 이슈가 사람 개입 없이 PR 생성 → 교차 리뷰 → 체크 통과 → 자동 병합(T1) → 배포까지 진행된다. 근거: 이슈 #7이 `triaged` → `approved` → `in-progress` → `in-review` → `merged` → `deployed`로 7분 안에 바뀌고 닫혔다. PR #8은 codex 교차 리뷰 승인 후 봇이 squash 병합했고, deploy run [38134361841](https://github.com/roboco-io/software-factory-demo/actions/runs/38134361841)이 성공했다. 즐겨찾기는 `favorites` 테이블 마이그레이션이 필요한 T2라서 다음 항목의 예시로 쓴다.
-- [x] T2 경로(마이그레이션)를 포함한 PR은 사람 승인 전까지 병합되지 않는다. 근거: 즐겨찾기 이슈 #9의 PR [#10](https://github.com/roboco-io/software-factory-demo/pull/10)은 `risk:T2`, `mergeStateStatus: BLOCKED`로 열려 있고, 프리뷰 배포는 생략되었으며, 이슈는 `factory:needs-human`이다.
+- [x] GitHub App `roboco-software-factory-bot`이 설치되고 워크플로가 App 토큰으로 동작한다(사용자가 웹 UI에서 App 생성). 근거: PR [#8](https://github.com/roboco-io/the-software-factory-demo/pull/8)의 `mergedBy`가 `app/roboco-software-factory-bot`이다.
+- [x] 세 어댑터(claude, codex, pi)와 fake 어댑터가 5.2 인터페이스를 구현하고 계약 테스트를 통과한다. 근거: 계약 테스트 run [38133812404](https://github.com/roboco-io/the-software-factory-demo/actions/runs/38133812404)에서 6개 테스트 통과. 첫 run [38132807644](https://github.com/roboco-io/the-software-factory-demo/actions/runs/38132807644)는 codex 쓰기 모드가 실패했고 PR [#6](https://github.com/roboco-io/the-software-factory-demo/pull/6)에서 고쳤다(5.1 공통 규칙 참조).
+- [x] 새 이슈가 열리면 트리아지 코멘트와 `factory:triaged`가 자동으로 붙는다. 근거: 이슈 [#7](https://github.com/roboco-io/the-software-factory-demo/issues/7), [#9](https://github.com/roboco-io/the-software-factory-demo/issues/9). 이슈 [#5](https://github.com/roboco-io/the-software-factory-demo/issues/5)는 트리아지 턴 예산 초과로 `needs-human`이 되었고 PR #6에서 예산을 올렸다.
+- [x] 쓰기 권한자의 `@factory go`로만 구현이 시작되고, 권한 없는 사용자의 명령은 거부 코멘트를 받는다. 근거: 이슈 #5에서 읽기 권한 계정 `@jiran-dohyun`의 `@factory go`가 [거부 코멘트](https://github.com/roboco-io/the-software-factory-demo/issues/5#issuecomment-6108271995)를 받았고 `factory:approved`는 붙지 않았다.
+- [x] 남겨 둔 기능 1개(태그 목록, T1) 이슈가 사람 개입 없이 PR 생성 → 교차 리뷰 → 체크 통과 → 자동 병합(T1) → 배포까지 진행된다. 근거: 이슈 #7이 `triaged` → `approved` → `in-progress` → `in-review` → `merged` → `deployed`로 7분 안에 바뀌고 닫혔다. PR #8은 codex 교차 리뷰 승인 후 봇이 squash 병합했고, deploy run [38134361841](https://github.com/roboco-io/the-software-factory-demo/actions/runs/38134361841)이 성공했다. 즐겨찾기는 `favorites` 테이블 마이그레이션이 필요한 T2라서 다음 항목의 예시로 쓴다.
+- [x] T2 경로(마이그레이션)를 포함한 PR은 사람 승인 전까지 병합되지 않는다. 근거: 즐겨찾기 이슈 #9의 PR [#10](https://github.com/roboco-io/the-software-factory-demo/pull/10)은 `risk:T2`, `mergeStateStatus: BLOCKED`로 열려 있고, 프리뷰 배포는 생략되었으며, 이슈는 `factory:needs-human`이다.
 - [x] 리뷰 변경 요청 3회 초과, 예산 초과 시 `needs-human`으로 전이된다(fake 어댑터로 재현). 근거: `scenario.test.ts` "escalates to needs-human when review requests changes more than three times", `implement.test.ts` "moves to needs-human without a PR when the agent exceeds its budget".
 - [x] 일일 상한과 실패율 차단기가 단위 테스트와 fake 시나리오로 검증된다. 근거: `guard.test.ts`, `common.test.ts`, `scenario.test.ts` "keeps triaging but stops starting implement runs after the breaker trips".
 - [x] 모든 런이 `factory-data`에 기록되고, 봇 PR 본문이 5.5 템플릿을 따른다. 근거: `factory-data`의 `runs/2026-10.jsonl`에 이슈 #5·#7·#9의 triage·command·implement·review·gate·deploy 런 13줄이 있다. PR #8 본문에 요약, 이유, 증거, 남은 위험, 위험 등급과 근거, 실행 정보 섹션이 있다.
@@ -503,11 +504,11 @@ spec이 정하지 않았거나, 기존 코드 때문에 spec과 다르게 정한
 
 - [x] 7.1.1: `risk-tier`·`policy`의 임시 분기가 제거되고, T2 PR에도 교차 리뷰 판정 코멘트가 남는다. 근거: PR #13(`workflows.test.ts` "ci.yml judges risk-tier with the base commit's factory code", `review.test.ts` "posts the verdict for a T2 PR held in needs-human without changing state or dispatching"). 실제 T2 봇 PR에서의 관찰은 아직 없다(10.1).
 - [x] `evidence`가 main 보호 규칙의 필수 체크로 등록된다. 근거: PR #15 병합 뒤 ruleset `main-protection`의 필수 체크가 `typecheck, lint, unit, realworld-api, e2e, risk-tier, evidence`다(2026-10-11 16:52 UTC 갱신).
-- [x] 심은 버그에 대한 버그 이슈가 `@factory go` 이후 사람 개입 없이 재현 테스트 작성 → `evidence` 통과 → 교차 리뷰 → 병합 → 배포까지 진행되고, 배포 후 버그가 프로덕션에서 사라진다. 근거: 사람 PR #16이 버그를 심었고 배포 뒤 홈의 페이지 버튼이 2개에서 0개가 되었다(글 11개). 버그 이슈 #18에 17:08 UTC `@factory go`를 남긴 뒤 라벨이 `triaged → approved → in-progress → in-review → merged → deployed`로 바뀌고 17:16 UTC에 봇이 닫았다. 수정 PR #19(구현 `claude/claude-sonnet-5-5`, 리뷰 `codex/gpt-6.1-sol` 승인, `risk:T1`, 봇이 병합)는 `ArticleList.tsx`와 재현 테스트 `ArticleList.test.tsx`를 바꿨다. [ci run 38158628443](https://github.com/roboco-io/software-factory-demo/actions/runs/38158628443)의 `evidence` 로그: "evidence 통과(PR #19, reasonCode=evaluated)", "base 종료 코드 1(통과 2, 실패 4), head 종료 코드 0(통과 6, 실패 0)". [deploy run 38158831881](https://github.com/roboco-io/software-factory-demo/actions/runs/38158831881) 뒤 페이지 버튼이 다시 2개다.
+- [x] 심은 버그에 대한 버그 이슈가 `@factory go` 이후 사람 개입 없이 재현 테스트 작성 → `evidence` 통과 → 교차 리뷰 → 병합 → 배포까지 진행되고, 배포 후 버그가 프로덕션에서 사라진다. 근거: 사람 PR #16이 버그를 심었고 배포 뒤 홈의 페이지 버튼이 2개에서 0개가 되었다(글 11개). 버그 이슈 #18에 17:08 UTC `@factory go`를 남긴 뒤 라벨이 `triaged → approved → in-progress → in-review → merged → deployed`로 바뀌고 17:16 UTC에 봇이 닫았다. 수정 PR #19(구현 `claude/claude-sonnet-5-5`, 리뷰 `codex/gpt-6.1-sol` 승인, `risk:T1`, 봇이 병합)는 `ArticleList.tsx`와 재현 테스트 `ArticleList.test.tsx`를 바꿨다. [ci run 38158628443](https://github.com/roboco-io/the-software-factory-demo/actions/runs/38158628443)의 `evidence` 로그: "evidence 통과(PR #19, reasonCode=evaluated)", "base 종료 코드 1(통과 2, 실패 4), head 종료 코드 0(통과 6, 실패 0)". [deploy run 38158831881](https://github.com/roboco-io/the-software-factory-demo/actions/runs/38158831881) 뒤 페이지 버튼이 다시 2개다.
 - [x] 수정 전 코드에서도 통과하는 테스트만 가진 버그 PR은 `evidence`에서 실패한다(fake 시나리오 또는 사람 PR로 확인). 근거: `evidence-run.test.ts` "fails when the reproduction test also passes on the base tree"(가짜 실행기). 사람 PR은 판정 대상이 아니므로(`evidence-plan.test.ts` "ignores a human-authored PR even when its body carries a valid marker") 라이브 음성 대조 PR은 만들 수 없었다. 대신 실제 판정 CLI(`pnpm -s factory evidence-run`)를 로컬에서 실제 Vitest로 실행해, main(`4ea3bc1`)에 base에서도 통과하는 테스트만 더한 커밋에 대해 "evidence 실패(PR #1, reasonCode=evaluated): 재현 테스트가 수정 전(base) 코드에서도 통과했다"와 종료 코드 1을 확인했다. GitHub의 봇 PR에서 음성 판정이 난 사례는 아직 없다.
-- [x] 프로덕션에서 의도적으로 발생시킨 에러가 30분 안에 `source:error` 이슈가 되고, 같은 에러가 반복되면 새 이슈 대신 코멘트로 횟수가 갱신된다. 근거: probe(토큰 없음 404, 토큰 500)를 16:59:03 UTC에 보냈고, 이슈 #20(`source:error`, `type:bug`, 작성자 봇)이 17:20:09 UTC(21분 뒤)에 생겼다. 두 번째 probe(17:20:25) 뒤 수집에서 [누적 2회 코멘트](https://github.com/roboco-io/software-factory-demo/issues/20#issuecomment-6111866130)가 달렸고 열린 `source:error` 이슈는 1개였다. 단, 두 수집 모두 예약 실행이 돌지 않아 수동 실행(run 38159169501, 38160971658)으로 했다. 예약 실행의 지연은 10.1에 수용 위험으로 적었다.
+- [x] 프로덕션에서 의도적으로 발생시킨 에러가 30분 안에 `source:error` 이슈가 되고, 같은 에러가 반복되면 새 이슈 대신 코멘트로 횟수가 갱신된다. 근거: probe(토큰 없음 404, 토큰 500)를 16:59:03 UTC에 보냈고, 이슈 #20(`source:error`, `type:bug`, 작성자 봇)이 17:20:09 UTC(21분 뒤)에 생겼다. 두 번째 probe(17:20:25) 뒤 수집에서 [누적 2회 코멘트](https://github.com/roboco-io/the-software-factory-demo/issues/20#issuecomment-6111866130)가 달렸고 열린 `source:error` 이슈는 1개였다. 단, 두 수집 모두 예약 실행이 돌지 않아 수동 실행(run 38159169501, 38160971658)으로 했다. 예약 실행의 지연은 10.1에 수용 위험으로 적었다.
 - [x] 익명 피드백이 `source:feedback` 이슈가 되고, 같은 IP 해시의 4번째 요청은 10분 안에 429를 받는다. 근거: 16:59:16 UTC에 같은 IP에서 보낸 4건의 응답이 `201 201 201 429`였고, 이슈 #21·#22·#23(1/4-3/4)이 `source:feedback`으로 생겼다. 이슈 본문에 IP는 없다.
-- [x] 스모크 실패가 `source:smoke` 이슈가 되고(검증용 실패 주입), 복구 후 "복구됨" 코멘트가 남는다. 근거: `api_base=.../api/__smoke_injected_failure`로 실행한 [run 38157745579](https://github.com/roboco-io/software-factory-demo/actions/runs/38157745579)에서 `checks` 실패, `report`가 이슈 #17을 만들었다. 입력 없이 실행한 [run 38157881883](https://github.com/roboco-io/software-factory-demo/actions/runs/38157881883) 뒤 [복구됨 코멘트](https://github.com/roboco-io/software-factory-demo/issues/17#issuecomment-6111470862)가 달렸다.
+- [x] 스모크 실패가 `source:smoke` 이슈가 되고(검증용 실패 주입), 복구 후 "복구됨" 코멘트가 남는다. 근거: `api_base=.../api/__smoke_injected_failure`로 실행한 [run 38157745579](https://github.com/roboco-io/the-software-factory-demo/actions/runs/38157745579)에서 `checks` 실패, `report`가 이슈 #17을 만들었다. 입력 없이 실행한 [run 38157881883](https://github.com/roboco-io/the-software-factory-demo/actions/runs/38157881883) 뒤 [복구됨 코멘트](https://github.com/roboco-io/the-software-factory-demo/issues/17#issuecomment-6111470862)가 달렸다.
 - [x] 유입 이슈 3종이 모두 트리아지되고, 사람의 `@factory go` 없이는 구현되지 않는다. 근거: #17·#20·#21·#22·#23이 모두 `factory:triaged`를 받았고 `factory/issue-N` PR은 0개였다. 라벨 이벤트로 시작된 `factory-implement` run은 모두 `skipped`였다. 단위 테스트 `triage.test.ts` "triages bot-opened intake issues (source:*) and still needs @factory go to implement". 검증 이슈는 확인 뒤 닫았다.
 
 ### P4 보고·자기개선 — 완료 조건
@@ -516,11 +517,11 @@ spec이 정하지 않았거나, 기존 코드 때문에 spec과 다르게 정한
 
 - [x] 리뷰 지적에 범주가 붙고, review 런 기록에 범주가 남는다. 필드 이름은 `findings`다(7.2.9 1번). 근거: `factory-data`의 `runs/2026-10.jsonl`에서 PR #44(이슈 #42) review 런의 `findings`는 `error-format` 2건이고, PR #45(#41)와 PR #46(#43)은 각 1건이다. 범주가 없거나 목록에 없는 지적은 `other`로 기록된다(단위 테스트).
 - [x] `eval`이 main 보호 규칙의 필수 체크로 등록된다(8개). 근거: ruleset `main-protection`의 필수 체크는 `typecheck, lint, unit, realworld-api, e2e, risk-tier, evidence, eval`이다(2026-10-12 04:35 UTC 갱신, PR #27 병합 뒤).
-- [x] 심은 실패가 서로 다른 이슈 3건 이상에서 같은 리뷰 범주로 기록되고, `collect`가 그 범주를 개선 후보로 낸다. 근거: 구현 프롬프트를 오염시킨 PR #40 뒤, 이슈 #41, #42, #43의 리뷰가 `error-format`을 모두 4번 지적했다. weekly [run 38222999723](https://github.com/roboco-io/software-factory-demo/actions/runs/38222999723)(08:20 UTC)이 후보 `review:error-format`(4회, 서로 다른 이슈 3건)을 냈다. 앞선 두 심기 시도(#31, #38)에서는 지적이 0건이었다(7.2.7).
-- [x] 수동 실행한 `factory-weekly`의 improve가 규칙과 평가 케이스를 담은 `factory:improve` PR을 연다. 이 PR은 T3로 사람 승인을 기다린다. 근거: 같은 run이 PR [#47](https://github.com/roboco-io/software-factory-demo/pull/47)을 열었다. 라벨은 `risk:T3`와 `factory:improve`다. 바뀐 파일은 `eslint.config.js`(`apps/api/src/routes/**`에서 `errors` 값이 객체 리터럴인 `c.json` 호출을 막는 `no-restricted-syntax`), `factory/evals/error-format/case.yml`, `fixture.ts`다. CODEOWNER가 승인한 뒤 08:27 UTC에 병합했다.
-- [x] 그 PR에서 `eval`이 통과하고, 평가 케이스가 base 규칙으로는 픽스처를 잡지 못한다는 판정 로그가 남는다. 근거: [eval job](https://github.com/roboco-io/software-factory-demo/actions/runs/38223377457/job/114724977130) 로그 "- error-format: base=못 잡음, head=잡음". 음성 대조로 PR #47의 head에서 `eslint.config.js`만 base로 되돌리고 로컬에서 `pnpm -s factory eval-run`을 실행했다. 결과는 "새 케이스 error-format를 head도 잡지 못한다", "base=못 잡음, head=못 잡음"이었고 종료 코드는 1이었다.
-- [x] 개선 PR 병합 뒤, 같은 실수를 담은 변경이 `lint` 또는 `eval`에서 실패한다. 근거: `routes/tags.ts`에 `return c.json({ errors: { prefix: [...] } }, 422)`를 넣은 draft PR #48에서 [lint job](https://github.com/roboco-io/software-factory-demo/actions/runs/38223958193/job/114726765443)이 실패했다(`no-restricted-syntax`). 확인 뒤 닫았다.
-- [x] 주간 리포트 이슈가 생성되고 6개 지표, 표본 수, 규칙 전후 비교가 표시된다. 근거: 이슈 [#29](https://github.com/roboco-io/software-factory-demo/issues/29) "주간 리포트 2026-W42". [08:52 UTC 코멘트](https://github.com/roboco-io/software-factory-demo/issues/29#issuecomment-6120933849)에는 다음 항목이 들어 있다. 요약(완주율), 엔진별 성공률과 비용, 작성자별 병합 비중, 등급별 사람 승인 없는 병합(표본이 5 미만이면 "데이터 부족 (n=4)"로 표시), 실패 사유 상위, 규칙 효과(`review:error-format` #47, 병합 전 28일 4건, 병합 뒤 0건(0일)), 개선 후보. 병합 뒤 기간이 0일이므로 이 비교는 아직 효과의 근거가 아니다.
+- [x] 심은 실패가 서로 다른 이슈 3건 이상에서 같은 리뷰 범주로 기록되고, `collect`가 그 범주를 개선 후보로 낸다. 근거: 구현 프롬프트를 오염시킨 PR #40 뒤, 이슈 #41, #42, #43의 리뷰가 `error-format`을 모두 4번 지적했다. weekly [run 38222999723](https://github.com/roboco-io/the-software-factory-demo/actions/runs/38222999723)(08:20 UTC)이 후보 `review:error-format`(4회, 서로 다른 이슈 3건)을 냈다. 앞선 두 심기 시도(#31, #38)에서는 지적이 0건이었다(7.2.7).
+- [x] 수동 실행한 `factory-weekly`의 improve가 규칙과 평가 케이스를 담은 `factory:improve` PR을 연다. 이 PR은 T3로 사람 승인을 기다린다. 근거: 같은 run이 PR [#47](https://github.com/roboco-io/the-software-factory-demo/pull/47)을 열었다. 라벨은 `risk:T3`와 `factory:improve`다. 바뀐 파일은 `eslint.config.js`(`apps/api/src/routes/**`에서 `errors` 값이 객체 리터럴인 `c.json` 호출을 막는 `no-restricted-syntax`), `factory/evals/error-format/case.yml`, `fixture.ts`다. CODEOWNER가 승인한 뒤 08:27 UTC에 병합했다.
+- [x] 그 PR에서 `eval`이 통과하고, 평가 케이스가 base 규칙으로는 픽스처를 잡지 못한다는 판정 로그가 남는다. 근거: [eval job](https://github.com/roboco-io/the-software-factory-demo/actions/runs/38223377457/job/114724977130) 로그 "- error-format: base=못 잡음, head=잡음". 음성 대조로 PR #47의 head에서 `eslint.config.js`만 base로 되돌리고 로컬에서 `pnpm -s factory eval-run`을 실행했다. 결과는 "새 케이스 error-format를 head도 잡지 못한다", "base=못 잡음, head=못 잡음"이었고 종료 코드는 1이었다.
+- [x] 개선 PR 병합 뒤, 같은 실수를 담은 변경이 `lint` 또는 `eval`에서 실패한다. 근거: `routes/tags.ts`에 `return c.json({ errors: { prefix: [...] } }, 422)`를 넣은 draft PR #48에서 [lint job](https://github.com/roboco-io/the-software-factory-demo/actions/runs/38223958193/job/114726765443)이 실패했다(`no-restricted-syntax`). 확인 뒤 닫았다.
+- [x] 주간 리포트 이슈가 생성되고 6개 지표, 표본 수, 규칙 전후 비교가 표시된다. 근거: 이슈 [#29](https://github.com/roboco-io/the-software-factory-demo/issues/29) "주간 리포트 2026-W42". [08:52 UTC 코멘트](https://github.com/roboco-io/the-software-factory-demo/issues/29#issuecomment-6120933849)에는 다음 항목이 들어 있다. 요약(완주율), 엔진별 성공률과 비용, 작성자별 병합 비중, 등급별 사람 승인 없는 병합(표본이 5 미만이면 "데이터 부족 (n=4)"로 표시), 실패 사유 상위, 규칙 효과(`review:error-format` #47, 병합 전 28일 4건, 병합 뒤 0건(0일)), 개선 후보. 병합 뒤 기간이 0일이므로 이 비교는 아직 효과의 근거가 아니다.
 - [x] 팩토리가 라벨을 바꾸면 Projects 보드의 상태 필드가 따라 바뀐다. 근거: 보드 "Software Factory"(org 프로젝트 3)의 `Factory` 필드가 이슈 #32, #33, #34, #38, #42, #43은 `deployed`, #41은 `needs-human`이다. 라벨과 같다. #33은 PR #52 병합 뒤 `deployed`로 바뀌었다(7.2.9 10번).
 - [x] 대시보드 `/factory/`가 새 런 기록을 Pages 재배포 없이 보여 준다. 근거: 14:10 UTC에 브라우저로 페이지를 열었다. 페이지는 `raw.githubusercontent.com/.../factory-data/runs/2026-10.jsonl`(200, 84줄)과 `improvements.json`을 직접 받았다. 받은 데이터의 마지막 기록은 12:22 UTC 것이고, 마지막 Pages 배포(deploy run 완료 08:51 UTC)보다 뒤에 생겼다. 차트에는 개선 PR 마커 `#47`이 표시된다.
 
@@ -530,7 +531,7 @@ P2 착수 전 미결 사항(CODEOWNERS 소유자, pi DeepSeek provider ID, Codex
 
 ### 10.1 수용한 잔여 위험(P2-P4)
 
-다음 위험은 데모 범위에서 수용했고 README의 "프리뷰 보안 한계", "팩토리 보안 한계"에도 기록했다.
+다음 위험은 데모 범위에서 수용했고 `docs/operations.md`의 "프리뷰 보안 한계", "팩토리 보안 한계"에도 기록했다.
 
 - agent job은 배정된 엔진의 키만 환경변수로 받지만, job 정의가 참조하는 세 엔진 시크릿이 마스킹 목록으로 모두 runner에 전달될 수 있다. sudo 권한을 가진 에이전트 프로세스가 runner 메모리를 읽으면 다른 엔진의 키를 얻을 수 있다. 엔진별 job 세 개로 나누는 방안은 미뤘다.
 - agent job의 runner에는 Actions 런타임 토큰이 있다. runner를 장악한 에이전트는 Actions 캐시에 오염된 항목을 쓸 수 있고, 이후 신뢰하는 job이 그 캐시를 복원하면 오염된 의존성이 실행될 수 있다.
@@ -538,7 +539,7 @@ P2 착수 전 미결 사항(CODEOWNERS 소유자, pi DeepSeek provider ID, Codex
 - `preview` environment의 Cloudflare 토큰은 `production`과 분리되지 않았고 계정 단위 권한을 가진다. 완화책은 봇 PR이 T2·T3 경로를 바꾸면 프리뷰 배포를 생략하는 것이다(5.4 시크릿 격리).
 - (해소) T2 PR은 CI가 끝나자마자 gate가 `needs-human`으로 옮기므로, 리뷰 publish가 그 뒤에 끝나면 교차 리뷰 판정을 남기지 않았다(2026-10-11 PR #10에서 관찰). P3의 7.1.1에서 리뷰 publish가 위험 등급 때문에 `needs-human`에 있는 PR에도 판정을 남기도록 바꿨다(`review.test.ts` "posts the verdict for a T2 PR held in needs-human without changing state or dispatching"). 2026-10-12 기준 이 경로를 지난 실제 T2 봇 PR은 아직 없다.
 
-다음은 P3에서 추가로 수용한 위험이다. README "팩토리 보안 한계"에도 기록했다.
+다음은 P3에서 추가로 수용한 위험이다. `docs/operations.md` "팩토리 보안 한계"에도 기록했다.
 
 - `evidence` job은 PR 코드(테스트, 의존성 설치 스크립트)를 실행한다. 이 job에는 시크릿과 GitHub 토큰이 없지만 판정 프로세스와 같은 VM에서 돌기 때문에, 악의적인 PR 코드는 판정이 읽는 Vitest JSON 보고서를 위조해 `evidence`를 통과시킬 수 있다. `evidence`는 재현 테스트가 있다는 증거를 요구하는 장치이고 악의적인 작성자를 막는 장치가 아니다. T2·T3 변경은 계속 사람 승인이 막는다.
 - 피드백의 IP별 한도는 IP를 바꿔 가며 보내는 스팸을 막지 못한다. 전체 한도(하루 50건) 때문에 피드백 이슈와 그에 따른 triage 실행은 하루 약 50건으로 제한된다.
@@ -547,7 +548,7 @@ P2 착수 전 미결 사항(CODEOWNERS 소유자, pi DeepSeek provider ID, Codex
 - CODEOWNERS 승인은 PR 작성자가 유일한 코드 소유자(`@serithemage`)이면 강제되지 않는다(GitHub는 작성자 자신의 승인을 요구하지 않는다. 2026-10-11 PR #13·#15 병합에서 확인). 그래서 T2·T3의 사람 승인 게이트는 봇 PR에만 실질적으로 적용되고, 소유자 자신의 PR은 필수 체크만 통과하면 병합된다. 데모 리포는 사람 기여자가 한 명이라 수용했다. 사람 기여자가 늘면 소유자를 두 명 이상으로 두어야 한다.
 - GitHub `schedule` 트리거는 정시에 실행된다는 보장이 없다. 2026-10-11 라이브 검증에서 `factory-intake.yml`의 17:07·17:37 UTC 예약 실행이 17:45 UTC까지 생기지 않았고(같은 시기 `factory-guard.yml`의 16:17 예약 실행은 16:39에 22분 늦게 돌았다), 그래서 수동 실행(`workflow_dispatch`)으로 수집했다(9장 P3 근거 참고). 그래서 "에러가 30분 안에 이슈가 된다"는 조건은 예약 실행이 제때 돌 때만 성립한다. 2026-10-12 확인 결과 첫 예약 실행은 `factory-intake.yml`이 2026-10-11 20:56 UTC, `factory-smoke.yml`이 22:03 UTC에 성공했다. 새 워크플로의 첫 예약 실행이 늦게 시작된 것으로 본다.
 
-다음은 P4에서 추가로 수용한 위험이다. README "팩토리 보안 한계"에도 기록했다.
+다음은 P4에서 추가로 수용한 위험이다. `docs/operations.md` "팩토리 보안 한계"에도 기록했다.
 
 - `eval` job은 head 트리의 `eslint.config.js`를 실행한다. 그래서 악의적인 PR은 설정 파일에서 판정 결과를 위조할 수 있다. 이것은 `evidence`와 같은 성격의 한계다. job에는 시크릿과 GitHub 토큰이 없고, 개선 PR은 T3라 사람 승인이 막는다.
 - 평가 케이스가 없는 기존 ESLint 규칙을 지우는 변경은 `eval`이 잡지 못한다. 회귀 검사는 평가 케이스가 있는 규칙만 지키기 때문이다. 개선 PR 본문의 "ESLint 설정에서 삭제된 줄" 절과 사람 검토에 의존한다.

@@ -35,7 +35,7 @@ const report = (over: Partial<PrReport> = {}): PrReport => ({
     { name: "pnpm typecheck", ok: true },
     { name: "pnpm test", ok: true },
   ],
-  preview: "웹 https://roboco.io/software-factory-demo/pr-preview/pr-9/",
+  preview: "웹 https://roboco.io/the-software-factory-demo/pr-preview/pr-9/",
   risks: ["태그 수가 많으면 응답이 커진다"],
   risk: {
     tier: "T1",

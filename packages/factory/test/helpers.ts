@@ -152,15 +152,15 @@ export function makeTestDeps(
   const requested: string[] = [];
   const settings: Settings = {
     owner: "roboco-io",
-    repo: "software-factory-demo",
+    repo: "the-software-factory-demo",
     workdir: dir,
     botLogin: BOT,
     botEmail: `1+${BOT}@users.noreply.github.com`,
     paused: false,
     dailyLimit: 20,
-    webUrl: "https://roboco.io/software-factory-demo/",
+    webUrl: "https://roboco.io/the-software-factory-demo/",
     workersSubdomain: "roboco",
-    runUrl: "https://github.com/roboco-io/software-factory-demo/actions/runs/1",
+    runUrl: "https://github.com/roboco-io/the-software-factory-demo/actions/runs/1",
     runId: 1,
     token: "test-token",
     bundlePath: null,

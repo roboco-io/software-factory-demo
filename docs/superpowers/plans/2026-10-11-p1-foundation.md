@@ -3641,8 +3641,8 @@ Expected: `typecheck`, `lint`, `unit`, `realworld-api`, `e2e` 5개 job 모두 �
 1. Cloudflare 대시보드에서 API 토큰 생성: 권한 `Account > Workers Scripts > Edit`, `Account > D1 > Edit`, `Account > Account Settings > Read`, `User > User Details > Read`.
 2. 아래 명령을 사용자가 프롬프트에서 실행한다(`!` 접두사로 실행하면 출력이 대화에 남는다):
    ```bash
-   ! gh secret set CLOUDFLARE_API_TOKEN -R roboco-io/software-factory-demo
-   ! gh secret set CLOUDFLARE_ACCOUNT_ID -R roboco-io/software-factory-demo
+   ! gh secret set CLOUDFLARE_API_TOKEN -R roboco-io/the-software-factory-demo
+   ! gh secret set CLOUDFLARE_ACCOUNT_ID -R roboco-io/the-software-factory-demo
    ```
 3. 로컬에서 wrangler 인증: `! cd demos/software-factory-demo/apps/api && pnpm exec wrangler login`
 
@@ -3659,17 +3659,17 @@ cd apps/api
 openssl rand -base64 48 | pnpm exec wrangler secret put JWT_SECRET
 pnpm exec wrangler whoami
 ```
-Expected: `Success! Uploaded secret JWT_SECRET`. workers.dev 서브도메인은 Cloudflare 대시보드 Workers 개요 화면에 표시된다. 사용자에게 확인받아 `gh variable set WORKERS_SUBDOMAIN -R roboco-io/software-factory-demo --body <subdomain>`을 실행한다.
+Expected: `Success! Uploaded secret JWT_SECRET`. workers.dev 서브도메인은 Cloudflare 대시보드 Workers 개요 화면에 표시된다. 사용자에게 확인받아 `gh variable set WORKERS_SUBDOMAIN -R roboco-io/the-software-factory-demo --body <subdomain>`을 실행한다.
 
 - [ ] **Step 4: GitHub Pages 설정 (`gh-pages` 브랜치 소스)**
 
 Run:
 ```bash
 git switch --orphan gh-pages && git commit --allow-empty -m "chore: gh-pages 초기화" && git push origin gh-pages && git switch main
-gh api -X POST repos/roboco-io/software-factory-demo/pages -f "source[branch]=gh-pages" -f "source[path]=/"
-gh api repos/roboco-io/software-factory-demo/pages --jq '.html_url'
+gh api -X POST repos/roboco-io/the-software-factory-demo/pages -f "source[branch]=gh-pages" -f "source[path]=/"
+gh api repos/roboco-io/the-software-factory-demo/pages --jq '.html_url'
 ```
-Expected: `html_url` 출력. org 페이지 리포에 CNAME(`roboco.io`)이 있으면 `https://roboco.io/software-factory-demo/`가 나온다. 출력된 값으로 `gh variable set WEB_URL -R roboco-io/software-factory-demo --body <html_url>`을 실행한다. Pages가 이미 활성화되어 409가 나오면 `-X PUT`으로 같은 값을 설정한다.
+Expected: `html_url` 출력. org 페이지 리포에 CNAME(`roboco.io`)이 있으면 `https://roboco.io/the-software-factory-demo/`가 나온다. 출력된 값으로 `gh variable set WEB_URL -R roboco-io/the-software-factory-demo --body <html_url>`을 실행한다. Pages가 이미 활성화되어 409가 나오면 `-X PUT`으로 같은 값을 설정한다.
 
 - [ ] **Step 5: 배포 워크플로 작성**
 
@@ -3969,7 +3969,7 @@ Worker 삭제는 wrangler 대신 Cloudflare API를 직접 호출한다. `wrangle
 
 - [ ] **Step 5: (사용자 작업) 프리뷰 시크릿 설정**
 
-Run(사용자 프롬프트에서): `! openssl rand -base64 48 | gh secret set JWT_SECRET_PREVIEW -R roboco-io/software-factory-demo`
+Run(사용자 프롬프트에서): `! openssl rand -base64 48 | gh secret set JWT_SECRET_PREVIEW -R roboco-io/the-software-factory-demo`
 Expected: `✓ Set Actions secret JWT_SECRET_PREVIEW`. 프로덕션과 다른 값을 쓰는 이유: 프리뷰에서 발급한 토큰이 프로덕션에서 통하지 않게 하기 위해서다.
 
 - [ ] **Step 6: Commit**
@@ -4030,7 +4030,7 @@ Expected: `sfd-pr-` D1 개수 0, `pr-preview/` 아래 디렉토리 없음. Cloud
 - [ ] **Step 3: main 브랜치 ruleset 생성**
 
 ```bash
-gh api -X POST repos/roboco-io/software-factory-demo/rulesets --input - <<'JSON'
+gh api -X POST repos/roboco-io/the-software-factory-demo/rulesets --input - <<'JSON'
 {
   "name": "main-protection",
   "target": "branch",
@@ -4053,7 +4053,7 @@ gh api -X POST repos/roboco-io/software-factory-demo/rulesets --input - <<'JSON'
   ]
 }
 JSON
-gh api repos/roboco-io/software-factory-demo/rulesets --jq '.[] | {name, enforcement}'
+gh api repos/roboco-io/the-software-factory-demo/rulesets --jq '.[] | {name, enforcement}'
 ```
 Expected: `{"name":"main-protection","enforcement":"active"}`. 이 시점부터 main에 직접 push할 수 없다. `require_code_owner_review`는 CODEOWNERS 파일이 생기는 P2부터 실제로 작동한다.
 

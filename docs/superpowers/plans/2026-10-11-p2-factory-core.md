@@ -134,12 +134,12 @@ package.json (factory 스크립트, tsx), eslint.config.js, .prettierignore, AGE
 - 이름: `roboco-software-factory-bot`, Webhook: 끈다.
 - Repository permissions: Contents Read and write, Issues Read and write, Pull requests Read and write, Actions Read and write, **Variables Read and write**, Checks Read-only, Metadata Read-only. Workflows 권한은 주지 않는다(봇이 `.github/**`를 push하지 못하게 하기 위해서다).
 - Variables 권한이 필요한 이유: 실패율 차단기가 리포 변수 `FACTORY_PAUSED`를 `true`로 바꾼다(spec 5.4). Actions 쓰기 권한이 필요한 이유: fix·gate·implement 재개를 `workflow_dispatch`로 보내고 `@factory stop`이 run을 취소한다.
-- "Only on this account"로 만들고, `roboco-io/software-factory-demo` 한 리포에만 설치한다. 개인 키를 생성해 내려받는다.
+- "Only on this account"로 만들고, `roboco-io/the-software-factory-demo` 한 리포에만 설치한다. 개인 키를 생성해 내려받는다.
 
 - [ ] **Step 2: 시크릿·변수 등록과 확인**
 
 ```bash
-R=roboco-io/software-factory-demo
+R=roboco-io/the-software-factory-demo
 gh secret set FACTORY_APP_ID -R $R --body "<App ID 숫자>"
 gh secret set FACTORY_APP_PRIVATE_KEY -R $R < ~/Downloads/roboco-software-factory-bot.*.private-key.pem
 gh variable set FACTORY_BOT_USER_ID -R $R --body "$(gh api 'users/roboco-software-factory-bot%5Bbot%5D' --jq .id)"
@@ -154,7 +154,7 @@ Expected: 변수 `CLAUDE_MODEL=claude-sonnet-5-5`, `CODEX_MODEL=gpt-6.1-sol`, `P
 
 사람이 T2 PR을 UI에서 squash 병합할 때도 커밋 메시지에 `Factory-Issue:` 트레일러가 남아야 배포 단계가 이슈를 찾는다. 기본 squash 메시지를 "커밋 메시지 목록"으로 고정한다.
 ```bash
-gh api -X PATCH repos/roboco-io/software-factory-demo -f allow_squash_merge=true \
+gh api -X PATCH repos/roboco-io/the-software-factory-demo -f allow_squash_merge=true \
   -f squash_merge_commit_title=PR_TITLE -f squash_merge_commit_message=COMMIT_MESSAGES \
   --jq '{allow_squash_merge, squash_merge_commit_title, squash_merge_commit_message}'
 ```
@@ -164,7 +164,7 @@ Expected: `{"allow_squash_merge":true,"squash_merge_commit_title":"PR_TITLE","sq
 
 P1에서는 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`가 리포 시크릿이라 어떤 워크플로든 읽을 수 있었다. 봇이 브랜치를 push하기 전에 `production`·`preview` environment 시크릿으로만 둔다. 프리뷰용 토큰은 사용자가 Cloudflare 대시보드에서 별도로 발급한다(권한: Workers Scripts Edit, D1 Edit). Cloudflare 토큰은 Worker 이름 단위로 범위를 줄일 수 없으므로 프리뷰 토큰도 `sfd-api`를 덮어쓸 수 있다. 이 위험은 Task 17의 프리뷰 게이트(봇 T2·T3 PR은 프리뷰 생략)와 T2 경로의 사람 승인으로 줄인다.
 ```bash
-R=roboco-io/software-factory-demo
+R=roboco-io/the-software-factory-demo
 gh secret set CLOUDFLARE_API_TOKEN -R $R --env production --body "<프로덕션 토큰>"
 gh secret set CLOUDFLARE_ACCOUNT_ID -R $R --env production --body "<계정 ID>"
 gh secret set CLOUDFLARE_API_TOKEN -R $R --env preview --body "<프리뷰 토큰>"
@@ -192,8 +192,8 @@ Expected: 모델 목록에 `deepseek-flash`가 있고, 마지막 줄들에 `"typ
 - [ ] **Step 6: CODEOWNERS 계정과 비협업자 계정 확인**
 
 ```bash
-gh api repos/roboco-io/software-factory-demo/collaborators/serithemage/permission --jq .permission
-gh api repos/roboco-io/software-factory-demo/collaborators/jiran-dohyun/permission --jq .permission
+gh api repos/roboco-io/the-software-factory-demo/collaborators/serithemage/permission --jq .permission
+gh api repos/roboco-io/the-software-factory-demo/collaborators/jiran-dohyun/permission --jq .permission
 ```
 Expected: `serithemage`는 `admin`. `jiran-dohyun`은 `read` 또는 `none`(Task 18의 권한 거부 검증에 쓴다). `jiran-dohyun`이 `write` 이상이면 Task 18 Step 3에서 쓸 다른 비협업자 계정을 사용자에게 받는다.
 
@@ -3575,7 +3575,7 @@ const report = (over: Partial<PrReport> = {}): PrReport => ({
     { name: "pnpm typecheck", ok: true },
     { name: "pnpm test", ok: true },
   ],
-  preview: "웹 https://roboco.io/software-factory-demo/pr-preview/pr-9/",
+  preview: "웹 https://roboco.io/the-software-factory-demo/pr-preview/pr-9/",
   risks: ["태그 수가 많으면 응답이 커진다"],
   risk: { tier: "T1", files: [{ file: "apps/api/src/routes/tags.ts", tier: "T1", pattern: "apps/**" }] },
   run: { engine: "claude", model: "claude-sonnet-5-5", turns: 41, durationMs: 912_000, costUsd: 1.82 },
@@ -4605,7 +4605,7 @@ export interface StageDeps {
 }
 
 export function loadSettings(env: NodeJS.ProcessEnv): Settings {
-  const [owner = "roboco-io", repo = "software-factory-demo"] = (env.GITHUB_REPOSITORY ?? "")
+  const [owner = "roboco-io", repo = "the-software-factory-demo"] = (env.GITHUB_REPOSITORY ?? "")
     .split("/")
     .filter(Boolean);
   const botLogin = env.FACTORY_BOT_LOGIN || DEFAULT_BOT_LOGIN;
@@ -4620,7 +4620,7 @@ export function loadSettings(env: NodeJS.ProcessEnv): Settings {
     botEmail: `${userId ? `${userId}+` : ""}${botLogin}@users.noreply.github.com`,
     paused: (env.FACTORY_PAUSED ?? "").trim().toLowerCase() === "true",
     dailyLimit: Number.isFinite(limit) && limit > 0 ? limit : 20,
-    webUrl: env.WEB_URL || "https://roboco.io/software-factory-demo/",
+    webUrl: env.WEB_URL || "https://roboco.io/the-software-factory-demo/",
     workersSubdomain: env.WORKERS_SUBDOMAIN || "roboco",
     runUrl: Number.isFinite(runId)
       ? `${env.GITHUB_SERVER_URL ?? "https://github.com"}/${owner}/${repo}/actions/runs/${runId}`
@@ -5228,15 +5228,15 @@ export function makeTestDeps(
   const requested: string[] = [];
   const settings: Settings = {
     owner: "roboco-io",
-    repo: "software-factory-demo",
+    repo: "the-software-factory-demo",
     workdir: dir,
     botLogin: BOT,
     botEmail: `1+${BOT}@users.noreply.github.com`,
     paused: false,
     dailyLimit: 20,
-    webUrl: "https://roboco.io/software-factory-demo/",
+    webUrl: "https://roboco.io/the-software-factory-demo/",
     workersSubdomain: "roboco",
-    runUrl: "https://github.com/roboco-io/software-factory-demo/actions/runs/1",
+    runUrl: "https://github.com/roboco-io/the-software-factory-demo/actions/runs/1",
     runId: 1,
     token: "test-token",
     bundlePath: null,
@@ -8838,10 +8838,10 @@ Expected: `typecheck`, `lint`, `unit`, `realworld-api`, `e2e`, `risk-tier`(base�
 
 ```bash
 git switch main && git pull
-FACTORY_TOKEN="$(gh auth token)" GITHUB_REPOSITORY=roboco-io/software-factory-demo pnpm -s factory bootstrap
-gh label list -R roboco-io/software-factory-demo --limit 100 --json name --jq '[.[].name | select(test("^(factory|risk|type|agent|source):"))] | length'
+FACTORY_TOKEN="$(gh auth token)" GITHUB_REPOSITORY=roboco-io/the-software-factory-demo pnpm -s factory bootstrap
+gh label list -R roboco-io/the-software-factory-demo --limit 100 --json name --jq '[.[].name | select(test("^(factory|risk|type|agent|source):"))] | length'
 git ls-remote origin refs/heads/factory-data
-R=roboco-io/software-factory-demo
+R=roboco-io/the-software-factory-demo
 RID=$(gh api repos/$R/rulesets --jq '.[] | select(.name=="main-protection") | .id')
 gh api repos/$R/rulesets/$RID \
   | jq '{name, target, enforcement, conditions, rules: [.rules[] | if .type == "required_status_checks" then .parameters.required_status_checks += [{"context":"risk-tier"}] else . end]}' \
@@ -8852,23 +8852,23 @@ Expected: bootstrap 출력 `{"labels":24,"branch":"factory-data"}`, 라벨 수 2
 - [ ] **Step 3: 엔진 계약 테스트(spec 9장 "세 어댑터 … 계약 테스트를 통과")**
 
 ```bash
-gh workflow run factory-contract.yml -R roboco-io/software-factory-demo
-sleep 5; RUN=$(gh run list -R roboco-io/software-factory-demo -w factory-contract --limit 1 --json databaseId --jq '.[0].databaseId')
-gh run watch -R roboco-io/software-factory-demo "$RUN" --exit-status
-gh run view -R roboco-io/software-factory-demo "$RUN" --log | grep -E "✓|×|passed|failed" | tail -n 12
+gh workflow run factory-contract.yml -R roboco-io/the-software-factory-demo
+sleep 5; RUN=$(gh run list -R roboco-io/the-software-factory-demo -w factory-contract --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch -R roboco-io/the-software-factory-demo "$RUN" --exit-status
+gh run view -R roboco-io/the-software-factory-demo "$RUN" --log | grep -E "✓|×|passed|failed" | tail -n 12
 ```
 Expected: 6개 테스트(claude·codex·pi × 쓰기 생성·읽기 전용 미생성) 통과. 실패한 엔진이 있으면 해당 어댑터 Task로 돌아가 원인을 고친다(예: pi 도구 이름, Codex 샌드박스 권한). 이 Step은 Task 1 Step 5의 pi provider 확인을 대신할 수 있다.
 
 - [ ] **Step 4: 권한 없는 명령 거부 확인**
 
 ```bash
-gh issue create -R roboco-io/software-factory-demo --title "[검증] 권한 검사" --body "권한 없는 사용자의 @factory go 거부를 확인한다."
-N=$(gh issue list -R roboco-io/software-factory-demo --search "[검증] 권한 검사 in:title" --json number --jq '.[0].number')
+gh issue create -R roboco-io/the-software-factory-demo --title "[검증] 권한 검사" --body "권한 없는 사용자의 @factory go 거부를 확인한다."
+N=$(gh issue list -R roboco-io/the-software-factory-demo --search "[검증] 권한 검사 in:title" --json number --jq '.[0].number')
 gh auth switch --user jiran-dohyun
-gh issue comment -R roboco-io/software-factory-demo "$N" --body "@factory go"
+gh issue comment -R roboco-io/the-software-factory-demo "$N" --body "@factory go"
 gh auth switch --user serithemage
 sleep 60
-gh issue view -R roboco-io/software-factory-demo "$N" --json labels,comments --jq '{labels: [.labels[].name], last: .comments[-1].body}'
+gh issue view -R roboco-io/the-software-factory-demo "$N" --json labels,comments --jq '{labels: [.labels[].name], last: .comments[-1].body}'
 ```
 Expected: 라벨에 `factory:triaged`(트리아지 자동 완료)가 있고 `factory:approved`는 없다. 마지막 코멘트에 `@jiran-dohyun 님의 \`@factory go\` 명령을 거부했다`가 있다. 확인 후 `gh issue close "$N"`.
 
@@ -8876,7 +8876,7 @@ Expected: 라벨에 `factory:triaged`(트리아지 자동 완료)가 있고 `fac
 
 `GET /api/tags`는 기존 `tags` 테이블만 읽으므로 마이그레이션이 필요 없다(T1). 즐겨찾기는 `favorites` 테이블 마이그레이션이 필요해 T2이므로 사람 승인을 기다리는 것이 설계상 맞다(Step 6). 그래서 spec 9장의 "남겨 둔 기능 1개 … 사람 개입 없이 … 배포까지"는 태그 목록으로 검증한다.
 ```bash
-R=roboco-io/software-factory-demo
+R=roboco-io/the-software-factory-demo
 gh issue create -R $R --label type:feature --title "태그 목록 API(GET /api/tags)" --body "### 목표
 RealWorld 스펙대로 GET /api/tags가 저장된 태그 이름 목록을 반환한다.
 

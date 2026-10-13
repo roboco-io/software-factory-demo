@@ -39,7 +39,7 @@ export interface StageDeps {
 }
 
 export function loadSettings(env: NodeJS.ProcessEnv): Settings {
-  const [owner = "roboco-io", repo = "software-factory-demo"] = (env.GITHUB_REPOSITORY ?? "")
+  const [owner = "roboco-io", repo = "the-software-factory-demo"] = (env.GITHUB_REPOSITORY ?? "")
     .split("/")
     .filter(Boolean);
   const botLogin = env.FACTORY_BOT_LOGIN || DEFAULT_BOT_LOGIN;
@@ -54,7 +54,7 @@ export function loadSettings(env: NodeJS.ProcessEnv): Settings {
     botEmail: `${userId ? `${userId}+` : ""}${botLogin}@users.noreply.github.com`,
     paused: (env.FACTORY_PAUSED ?? "").trim().toLowerCase() === "true",
     dailyLimit: Number.isFinite(limit) && limit > 0 ? limit : 20,
-    webUrl: env.WEB_URL || "https://roboco.io/software-factory-demo/",
+    webUrl: env.WEB_URL || "https://roboco.io/the-software-factory-demo/",
     workersSubdomain: env.WORKERS_SUBDOMAIN || "roboco",
     runUrl: Number.isFinite(runId)
       ? `${env.GITHUB_SERVER_URL ?? "https://github.com"}/${owner}/${repo}/actions/runs/${runId}`

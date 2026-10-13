@@ -3319,7 +3319,7 @@ Expected: PASS.
 
 ```bash
 hurl --test --variable "api=https://sfd-api.roboco.workers.dev/api" tests/smoke/readonly.hurl
-E2E_BASE_URL=https://roboco.io/software-factory-demo/ pnpm --filter web exec playwright test -c e2e-smoke/playwright.config.ts
+E2E_BASE_URL=https://roboco.io/the-software-factory-demo/ pnpm --filter web exec playwright test -c e2e-smoke/playwright.config.ts
 ```
 Expected: Hurl은 3개 요청 모두 성공한다. Playwright는 "피드백" 버튼 단언에서 **실패한다**(프로덕션에 Task 9 웹이 아직 배포되지 않았기 때문이다). 나머지 단언(제목, Global Feed, 오류 없음)은 통과하는지 trace로 확인한다. 배포 뒤 재확인은 Task 13에서 한다.
 
@@ -3628,7 +3628,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ### Task 13: INTAKE_TOKEN 준비, PR #1 병합, 배포 확인, bootstrap
 
-이 Task는 실제 GitHub·Cloudflare를 쓴다. 각 Step의 근거(명령 출력, run URL)를 PR #1의 코멘트로 남긴다. 근거가 없는 항목은 완료로 보고하지 않는다. `R=roboco-io/software-factory-demo`, `API=https://sfd-api.roboco.workers.dev/api`를 셸 변수로 둔다.
+이 Task는 실제 GitHub·Cloudflare를 쓴다. 각 Step의 근거(명령 출력, run URL)를 PR #1의 코멘트로 남긴다. 근거가 없는 항목은 완료로 보고하지 않는다. `R=roboco-io/the-software-factory-demo`, `API=https://sfd-api.roboco.workers.dev/api`를 셸 변수로 둔다.
 
 **Files:** 없음(코드 변경 없음)
 
@@ -3640,7 +3640,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 `deploy.yml`의 동기화 step은 secret이 비어 있으면 실패하므로 병합 전에 만든다.
 ```bash
-R=roboco-io/software-factory-demo
+R=roboco-io/the-software-factory-demo
 mkdir -p ~/.config/sfd && chmod 700 ~/.config/sfd
 ( umask 077; openssl rand -hex 32 > ~/.config/sfd/intake-token )
 gh secret set INTAKE_TOKEN --env production -R "$R" < ~/.config/sfd/intake-token
@@ -3677,8 +3677,8 @@ Expected: deploy run 성공(`api` job의 "Sync INTAKE_TOKEN Worker secret" step 
 - [ ] **Step 4: 배포된 웹에 대한 스모크 재확인**
 
 ```bash
-for i in $(seq 1 30); do curl -fsS https://roboco.io/software-factory-demo/ | grep -q Conduit && break; sleep 10; done
-E2E_BASE_URL=https://roboco.io/software-factory-demo/ pnpm --filter web exec playwright test -c e2e-smoke/playwright.config.ts
+for i in $(seq 1 30); do curl -fsS https://roboco.io/the-software-factory-demo/ | grep -q Conduit && break; sleep 10; done
+E2E_BASE_URL=https://roboco.io/the-software-factory-demo/ pnpm --filter web exec playwright test -c e2e-smoke/playwright.config.ts
 ```
 Expected: 통과("피드백" 버튼 단언 포함). Pages 반영이 늦으면 5분 뒤 다시 실행한다.
 
@@ -3968,14 +3968,14 @@ await page.waitForSelector(".article-preview .preview-link", { timeout: 30000 })
 console.log(await page.locator(".pagination .page-item").count());
 await browser.close();
 EOF
-pnpm --filter web exec node "$SCRATCH/pages.mjs" https://roboco.io/software-factory-demo/
+pnpm --filter web exec node "$SCRATCH/pages.mjs" https://roboco.io/the-software-factory-demo/
 ```
 Expected: `ceil(COUNT/10)`(예: 11개면 `2`).
 
 - [ ] **Step 2: 음성 대조 — base에서도 통과하는 테스트만 가진 버그 PR은 evidence가 실패한다**
 
 ```bash
-R=roboco-io/software-factory-demo
+R=roboco-io/the-software-factory-demo
 NEG_ISSUE=$(gh issue create -R "$R" --label type:bug --title "[검증] evidence 음성 대조" --body "evidence 필수 체크가 수정 전 코드에서도 통과하는 테스트만 가진 버그 PR을 거부하는지 확인하는 검증 이슈다. 구현하지 않는다." | grep -oE '[0-9]+$')
 git switch -c verify/evidence-negative main
 cat > apps/web/src/components/Noop.test.ts <<'EOF'
@@ -4028,7 +4028,7 @@ echo "SEED_PR=$SEED_PR" >> "$SCRATCH/p3-evidence.env"
 Expected: `git diff --stat`이 `ArticleList.tsx` 한 파일 1줄 변경, `pnpm --filter web test` 통과(버그를 잡는 테스트가 없음을 확인), 필수 체크 7개 성공(`evidence`는 사람 PR이라 "검사하지 않음"). 병합 뒤 deploy가 끝나면 Step 1의 스크립트를 다시 실행한다:
 ```bash
 RUN=$(gh run list -R "$R" -w deploy --limit 1 --json databaseId --jq '.[0].databaseId'); gh run watch -R "$R" "$RUN" --exit-status
-sleep 60; pnpm --filter web exec node "$SCRATCH/pages.mjs" https://roboco.io/software-factory-demo/
+sleep 60; pnpm --filter web exec node "$SCRATCH/pages.mjs" https://roboco.io/the-software-factory-demo/
 ```
 Expected: `floor(COUNT/10)`가 1 이하이면 `0`(버튼 없음), 2 이상이면 그 값. Step 1의 값보다 작다.
 
@@ -4036,7 +4036,7 @@ Expected: `floor(COUNT/10)`가 1 이하이면 `0`(버튼 없음), 2 이상이면
 
 ```bash
 BUG=$(gh issue create -R "$R" --label type:bug --title "글 목록에서 마지막 페이지로 갈 수 없다" --body "### 재현 절차
-1. https://roboco.io/software-factory-demo/ 홈을 연다(글이 11개 이상 있을 때).
+1. https://roboco.io/the-software-factory-demo/ 홈을 연다(글이 11개 이상 있을 때).
 2. 글 목록 아래의 페이지 버튼을 본다.
 
 ### 기대한 결과와 실제 결과
@@ -4054,7 +4054,7 @@ gh pr view -R "$R" "$FIX_PR" --json state,mergedBy,labels,files --jq '{state, me
 SHA=$(gh pr view -R "$R" "$FIX_PR" --json headRefOid --jq .headRefOid)
 RUN=$(gh run list -R "$R" -w ci --commit "$SHA" --limit 1 --json databaseId --jq '.[0].databaseId')
 gh run view -R "$R" "$RUN" --log | grep -E "evidence (통과|실패)|base 종료 코드" | head -n 5
-pnpm --filter web exec node "$SCRATCH/pages.mjs" https://roboco.io/software-factory-demo/
+pnpm --filter web exec node "$SCRATCH/pages.mjs" https://roboco.io/the-software-factory-demo/
 ```
 Expected:
 - 이슈 라벨이 `factory:triaged` → `factory:approved` → `factory:in-progress` → `factory:in-review` → `factory:merged` → `factory:deployed`로 바뀌고 이슈가 닫힌다(사람 개입 없음).
@@ -4075,7 +4075,7 @@ Expected:
 - [ ] **Step 1: 프로덕션 에러 → `source:error` 이슈(30분 안), 반복은 코멘트**
 
 ```bash
-R=roboco-io/software-factory-demo; API=https://sfd-api.roboco.workers.dev/api
+R=roboco-io/the-software-factory-demo; API=https://sfd-api.roboco.workers.dev/api
 probe() { curl -sS -o /dev/null -w '%{http_code}\n' -X POST -H @<(printf 'Authorization: Bearer %s\n' "$(cat ~/.config/sfd/intake-token)") "$API/_factory/intake/probe"; }
 curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$API/_factory/intake/probe"
 date -u +%FT%TZ; probe

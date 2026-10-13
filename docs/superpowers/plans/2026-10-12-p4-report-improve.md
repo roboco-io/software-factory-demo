@@ -35,7 +35,7 @@
 - 표본 기준(spec 7.2.5): 모든 비율 옆에 표본 수를 적는다. 표본이 5건 미만이면 비율 대신 `데이터 부족`이라고 쓴다.
 - 주간 실행 일정: 매주 월요일 `0 0 * * 1`(UTC, 한국 시각 09:00)과 `workflow_dispatch`.
 - 보드: 조직 Projects v2의 제목은 `Software Factory`다. 단일 선택 필드 이름은 `Factory`이고, 옵션은 `STATES`의 8개 값이다. 보드 갱신이 실패해도 팩토리 실행을 실패시키지 않는다.
-- 대시보드 데이터 출처: `https://raw.githubusercontent.com/roboco-io/software-factory-demo/factory-data/...`. 2026-10-12 확인 결과 이 주소는 `access-control-allow-origin: *`와 `cache-control: max-age=300`을 반환한다.
+- 대시보드 데이터 출처: `https://raw.githubusercontent.com/roboco-io/the-software-factory-demo/factory-data/...`. 2026-10-12 확인 결과 이 주소는 `access-control-allow-origin: *`와 `cache-control: max-age=300`을 반환한다.
 - 워크플로 규칙은 P3와 같다.
   - `run:` 안에서 `${{ github.event.* }}`와 `${{ inputs.* }}`를 직접 쓰지 않는다.
   - 모든 체크아웃에 `persist-credentials: false`를 둔다.
@@ -858,7 +858,7 @@ gh pr create --title "feat(factory): P4 기반 — 리뷰 범주 기록, collect
 
 PR 본문에는 Task 1-6의 요약, spec 7.2.1, 7.2.2, 7.2.4의 대응, 그리고 "계획에서 정한 사항" 1번과 4번을 적는다. 본문 끝에 `🤖 Generated with [Claude Code](https://claude.com/claude-code)`를 붙인다. 필수 체크 7개가 통과하면 병합한다(T3, CODEOWNER 작성자 PR이므로 사람 승인 게이트가 실질적으로 없다. spec 10.1).
 
-병합한 뒤 App 토큰으로 `pnpm -s factory bootstrap`을 한 번 실행해 새 라벨을 만든다. 토큰을 만드는 방법은 README의 "처음 설정" 절을 따른다.
+병합한 뒤 App 토큰으로 `pnpm -s factory bootstrap`을 한 번 실행해 새 라벨을 만든다. 토큰을 만드는 방법은 `docs/operations.md`의 "운영자 안내: 팩토리 설정과 실행" 절을 따른다.
 
 ---
 
@@ -1012,7 +1012,7 @@ PR을 열고 다음을 확인한다.
 - [ ] **Step 6: 병합한 뒤 ruleset에 `eval`을 등록한다.**
 
 ```bash
-R=roboco-io/software-factory-demo
+R=roboco-io/the-software-factory-demo
 RID=$(gh api "repos/$R/rulesets" --jq '.[] | select(.name=="main-protection") | .id')
 gh api "repos/$R/rulesets/$RID" \
   | jq '{name, target, enforcement, conditions, bypass_actors: (.bypass_actors // []), rules: [.rules[] | if .type == "required_status_checks" then .parameters.required_status_checks += [{"context":"eval"}] else . end]}' \
@@ -1669,7 +1669,7 @@ git commit -m "feat(factory): Projects 보드 동기화 — moveTo 직후, guard
 
 ```ts
 // data.ts
-export const RAW = "https://raw.githubusercontent.com/roboco-io/software-factory-demo/factory-data";
+export const RAW = "https://raw.githubusercontent.com/roboco-io/the-software-factory-demo/factory-data";
 export interface Run { ts: string; issue: number; role: string; engine: string | null; ok: boolean; costUsd: number | null; failureReason: string | null; findings?: { category: string }[] }
 export function parseRuns(text: string): Run[];                 // 깨진 줄과 필수 필드가 없는 줄은 버린다
 export function recentMonths(now: Date, count: number): string[]; // ["2026-08", "2026-09", "2026-10"]
@@ -1841,7 +1841,7 @@ git commit -m "feat(factory): eval-live — 개선 전후 규칙으로 실제 �
 git push -u origin p4-board-dashboard
 ```
 
-PR을 열고 필수 체크 8개가 통과하면 병합한다. 배포가 끝나면 https://roboco.io/software-factory-demo/factory/ 에서 차트가 보이는지 확인한다.
+PR을 열고 필수 체크 8개가 통과하면 병합한다. 배포가 끝나면 https://roboco.io/the-software-factory-demo/factory/ 에서 차트가 보이는지 확인한다.
 
 ---
 
@@ -1853,10 +1853,10 @@ PR을 열고 필수 체크 8개가 통과하면 병합한다. 배포가 끝나�
 
 - [ ] **Step 1: App 설치 토큰을 만들고 bootstrap을 실행한다.**
 
-토큰 값은 출력하지 않는다. App 개인 키는 `~/.config/roboco-software-factory-bot.pem`에 있다. JWT를 만든 다음, installation `170175210`의 access token으로 바꾼다. P2에서 bootstrap을 실행할 때 쓴 방법(README "처음 설정" 절)을 그대로 따른다.
+토큰 값은 출력하지 않는다. App 개인 키는 `~/.config/roboco-software-factory-bot.pem`에 있다. JWT를 만든 다음, installation `170175210`의 access token으로 바꾼다. P2에서 bootstrap을 실행할 때 쓴 방법(`docs/operations.md`의 "운영자 안내: 팩토리 설정과 실행" 절)을 그대로 따른다.
 
 ```bash
-FACTORY_TOKEN="$TOKEN" GITHUB_REPOSITORY=roboco-io/software-factory-demo pnpm -s factory bootstrap
+FACTORY_TOKEN="$TOKEN" GITHUB_REPOSITORY=roboco-io/the-software-factory-demo pnpm -s factory bootstrap
 ```
 
 Expected:
@@ -1954,7 +1954,7 @@ CODEOWNER(`serithemage`)로 승인하고 병합한다. 사용자가 병합을 �
 
 - `gh workflow run factory-weekly.yml`을 한 번 더 실행한다. 리포트 이슈의 "규칙 효과" 표에 개선 PR이 나오고 병합 전 건수가 3 이상이어야 한다. 같은 주라면 새 이슈가 아니라 코멘트로 남는다(Review Focus 4).
 - 보드에서 Step 2 이슈들이 `deployed` 칸에 있다.
-- https://roboco.io/software-factory-demo/factory/ 의 범주 추이 차트에 `review:error-format`과 개선 PR 마커가 보인다. 마지막 런 기록이 대시보드에 반영되었는지는 5분 캐시를 고려해 확인한다.
+- https://roboco.io/the-software-factory-demo/factory/ 의 범주 추이 차트에 `review:error-format`과 개선 PR 마커가 보인다. 마지막 런 기록이 대시보드에 반영되었는지는 5분 캐시를 고려해 확인한다.
 
 ---
 

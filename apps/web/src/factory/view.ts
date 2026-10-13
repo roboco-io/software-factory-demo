@@ -9,8 +9,8 @@ import {
 } from "./insights";
 import { activeWeeks, categoryTrend, lastWeeks, recentRuns } from "./metrics";
 
-const REPO = "https://github.com/roboco-io/software-factory-demo";
-const APP = "https://roboco.io/software-factory-demo/";
+const REPO = "https://github.com/roboco-io/the-software-factory-demo";
+const APP = "https://roboco.io/the-software-factory-demo/";
 const ROLES: Record<string, string> = {
   triage: "요청 정리",
   command: "실행 승인",
