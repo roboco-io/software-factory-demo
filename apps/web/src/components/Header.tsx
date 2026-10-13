@@ -14,7 +14,7 @@ export function Header() {
     <nav className="navbar navbar-light">
       <div className="container">
         <NavLink className="navbar-brand" to="/">
-          conduit
+          conveyor
         </NavLink>
         <ul className="nav navbar-nav pull-xs-right">
           {item("/", "Home")}

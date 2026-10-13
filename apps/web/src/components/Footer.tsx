@@ -34,7 +34,7 @@ export function Footer() {
     <footer>
       <div className="container">
         <a href="#/" className="logo-font">
-          conduit
+          conveyor
         </a>
         <span className="attribution">소프트웨어 팩토리 데모</span>
         <button
