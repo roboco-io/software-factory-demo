@@ -6,14 +6,18 @@
 
 ## 미출시 (Unreleased)
 
+현재 기록할 미출시 변경은 없습니다.
+
+## 2026-10-14
+
 ### 변경
 
-- 저장소 이름과 공개 링크를 `the-software-factory-demo`로 변경하고, 책 집필 프로젝트에서 참조하는 데모의 새 주소를 정리합니다.
-- README에 로보코가 제안하는 소프트웨어 팩토리의 구현체라는 이름의 의미와 책 『The Software Factory』와의 관계를 설명합니다. 개발자·운영자 상세 안내를 [별도 문서](docs/operations.md)로 분리합니다.
+- 저장소 이름과 공개 링크를 `the-software-factory-demo`로 변경했습니다. 데모 문서·런 기록·팩토리 기본 주소를 맞추고, 책 집필 프로젝트의 72개 공개 링크도 갱신했습니다. [데모 PR #61](https://github.com/roboco-io/the-software-factory-demo/pull/61), [책 PR #1](https://github.com/roboco-io/the-software-factory/pull/1)
+- README에 로보코가 제안하는 소프트웨어 팩토리의 구현체라는 이름의 의미와 책 『The Software Factory』와의 관계를 설명하고, 개발자·운영자 상세 안내를 [별도 문서](docs/operations.md)로 분리했습니다.
 
 ### 추가
 
-- 변경 기록 파일과 기록·제외 기준을 적용하는 프로젝트 스킬을 추가합니다.
+- 변경 기록 파일과 기록·제외 기준을 적용하는 프로젝트 스킬을 추가했습니다. 기능·운영 정책·공개 사용법의 실질적 변화는 기록하고, 포맷·반복 실행·상태 로그는 제외합니다.
 
 ## 2026-10-13
 
