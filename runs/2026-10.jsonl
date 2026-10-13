@@ -94,3 +94,4 @@
 {"ts":"2026-10-13T22:20:23.513Z","issue":63,"pr":65,"role":"review","engine":"codex","model":"gpt-6.1-sol","ok":true,"turns":3,"costUsd":null,"durationMs":17282,"failureReason":null,"round":1,"findings":[]}
 {"ts":"2026-10-13T22:20:57.857Z","issue":63,"pr":65,"role":"gate","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":1}
 {"ts":"2026-10-13T22:22:45.674Z","issue":63,"pr":null,"role":"deploy","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":0}
+{"ts":"2026-10-13T22:52:27.426Z","issue":66,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
