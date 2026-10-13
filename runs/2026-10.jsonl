@@ -95,3 +95,4 @@
 {"ts":"2026-10-13T22:20:57.857Z","issue":63,"pr":65,"role":"gate","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":1}
 {"ts":"2026-10-13T22:22:45.674Z","issue":63,"pr":null,"role":"deploy","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":0}
 {"ts":"2026-10-13T22:52:27.426Z","issue":66,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
+{"ts":"2026-10-13T22:54:08.164Z","issue":66,"pr":null,"role":"triage","engine":"pi","model":"deepseek/deepseek-flash","ok":true,"turns":4,"costUsd":0.0032612279999999997,"durationMs":12369,"failureReason":null,"round":0}
