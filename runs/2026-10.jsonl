@@ -97,3 +97,4 @@
 {"ts":"2026-10-13T22:52:27.426Z","issue":66,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
 {"ts":"2026-10-13T22:54:08.164Z","issue":66,"pr":null,"role":"triage","engine":"pi","model":"deepseek/deepseek-flash","ok":true,"turns":4,"costUsd":0.0032612279999999997,"durationMs":12369,"failureReason":null,"round":0}
 {"ts":"2026-10-14T05:01:27.025Z","issue":66,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
+{"ts":"2026-10-14T12:01:41.061Z","issue":66,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
