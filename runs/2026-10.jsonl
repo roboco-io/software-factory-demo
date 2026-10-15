@@ -103,3 +103,4 @@
 {"ts":"2026-10-15T04:49:42.427Z","issue":66,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
 {"ts":"2026-10-15T11:39:02.597Z","issue":66,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
 {"ts":"2026-10-15T17:08:22.516Z","issue":66,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
+{"ts":"2026-10-15T21:30:49.479Z","issue":66,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
