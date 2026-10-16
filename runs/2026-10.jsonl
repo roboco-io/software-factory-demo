@@ -106,3 +106,4 @@
 {"ts":"2026-10-15T21:30:49.479Z","issue":66,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
 {"ts":"2026-10-16T04:40:02.515Z","issue":66,"pr":null,"role":"smoke","engine":null,"model":null,"ok":false,"turns":0,"costUsd":null,"durationMs":0,"failureReason":"smoke_failed","round":0}
 {"ts":"2026-10-16T05:48:06.745Z","issue":67,"pr":null,"role":"intake","engine":null,"model":null,"ok":true,"turns":0,"costUsd":null,"durationMs":0,"failureReason":null,"round":0}
+{"ts":"2026-10-16T05:51:06.043Z","issue":67,"pr":null,"role":"triage","engine":"pi","model":"deepseek/deepseek-flash","ok":true,"turns":21,"costUsd":0.029134404,"durationMs":90839,"failureReason":null,"round":0}
